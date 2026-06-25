@@ -1,0 +1,28 @@
+# docparse 의존성
+#
+# 각 파서(parsers/*_parse.py)는 독립적이며 필요한 것만 설치하면 된다.
+# 미설치 시 코드가 "설치 명령: pip install ..."을 직접 안내한다.
+# 한 번에 모두 설치하려면: pip install -r requirements.txt
+
+# === 무료·로컬 파서 (API 키 불필요) ===
+
+# HWPX 1순위 파서(hwpx_local_parse.py). 0.x 동안 minor 올림을 자동 수용(<1.0.0).
+# 엔진(hwpx-tomd)·소비자를 같은 작성자가 관리하므로 breaking 시 함께 대응한다.
+# 1.0.0(stable) 도달 시 >=1.0.0,<2.0.0 등으로 다시 조인다.
+# (엔진 소스를 직접 수정할 때만 editable 설치: pip install -e path/to/hwpx-tomd)
+hwpx-tomd>=0.2.0,<1.0.0
+
+# PDF 로컬 파서(opendataloader_parse.py). 별도로 Java 런타임이 필요하다.
+opendataloader-pdf
+
+# === 클라우드 파서 (각자 API 키 필요, 외부 SDK라 버전 핀 없이 최신 추적) ===
+
+requests       # Upstage(upstage_parse.py), Corepin(corepin_parse.py)
+google-genai   # Gemini(gemini_parse.py)
+mistralai      # Mistral(mistral_parse.py)
+llama-cloud    # LlamaParse(llamaparse_parse.py). httpx를 전이 의존성으로 가져온다.
+
+# === 공통 의존성 (여러 파서·스크립트가 공유) ===
+
+# PDF 페이지 진단(assess_document)·PDF 렌더(gvision)·크레딧 추정(llamaparse)·alt text(generate_alt_text).
+PyMuPDF

@@ -1,0 +1,28 @@
+__pycache__/
+*.pyc
+
+# 환경 변수 / API 키 (절대 커밋 금지)
+.env
+.env.local
+.env.*.local
+*.key
+
+# 로컬 전용 비공개 메모 (개인 연계·정본 경로·익명화 역매핑: 절대 공개 금지)
+references/_local.md
+_local.md
+
+# 로컬 전용 개발 일지 (개인 검증 이력 풀버전. 공개본은 루트 CHANGELOG.md로 대체)
+references/_changelog_local.md
+
+# docparse 작업 산출물
+_work-docparse/
+drafts/
+*_fused_v3.md
+*_llamaparse.md
+*_upstage.md
+*_gemini.md
+*_mistral.md
+*_opendataloader.md
+*_hwpxlocal.md
+*_corepin.md
+*_gvision.md
