@@ -2,6 +2,21 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
+## [3.17] - 2026-06-28
+
+### 변경
+- **Gemini·Mistral `latest` 모델 업데이트 재평가**(대표 PDF 3종: 텍스트PDF 187p·스캔양식 15p·수기 22p). 모델 버전: Gemini `2.5-flash`→**`3.5-flash`(thinking)**, Mistral OCR `2512`→**`ocr-4`**.
+- `parsers/gemini_parse.py`: 기본 `thinking_budget=0` + `max_output_tokens=65536`으로 **장문 요약화 방지**(thinking이 켜지면 장문을 전사 대신 요약해 본문을 버리고 완결 위장). `text=None` 가드 + 1회 재시도, MAX_TOKENS 경고 추가. **`--thinking` 옵션** 신설(체크박스·한글이름 등 소형 보조 패치용으로 thinking 활성화).
+- **Mistral ocr-4 헤딩 생성 추가**: 텍스트PDF에서 헤딩 5→76, 187p·17섹션 완전 전사. LlamaParse v2 크레딧 부족 시 ODL과 함께 폴백 Primary 후보로 격상(노이즈 strip + 글자 드리프트 패치 전제). SKILL.md 파서 비교표·tier-rules 반영.
+- **Gemini 보조 역할 격상**: 체크박스(F→A)·한글이름·텍스트 패치 1순위 보조(thinking ON). 단 장문 Primary 금지, 본문 verbatim 정본 부적합(철자 무단교정 신규 회귀).
+
+### 수정
+- 부록 J의 "Mistral `carring→calling` 과잉교정" 사례를 **Gemini 오독으로 정정**(학생이 실제 `calling` 표기). 평가 보고서 부록 M에 반영.
+- 정본 `02_파싱결과/(사업명)…fused.md`에 혼입된 구 Gemini 2.5 자가생성 "요약 통계" 117줄 제거.
+- gotchas.md: Gemini thinking 요약화·`text=None` 함정, 한글 파일명 NFC/NFD 정규화 함정, 백그라운드 `&`+`cd` 함정 추가.
+
+> 결론: **Primary 순위는 대부분 유지**(텍스트PDF=LlamaParse v2, 스캔양식=Upstage+Mistral, 수기=GV+Opus 캐스케이드). 변화는 Gemini 장문 Primary 금지 명문화 + 보조 역할 재배치, Mistral 폴백 가치 상승. 상세: 비교평가 보고서 부록 M.
+
 ## [3.16] - 2026-06-25
 
 ### 변경

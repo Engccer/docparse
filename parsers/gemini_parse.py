@@ -78,17 +78,42 @@ def main():
 
         print("변환 중...")
 
-        # Gemini API 호출
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[
-                types.Part.from_bytes(data=file_data, mime_type=mime_type),
-                prompt
-            ]
-        )
+        # gemini-flash-latest는 gemini-3.5-flash(thinking 모델)를 가리킨다(2026-06-28 확인).
+        # 기본은 thinking 비활성화: thinking을 켜면 장문(≳20p)에서 전사 대신 "요약"으로 빠져
+        # 본문 대부분을 조용히 버리고 완결된 문서처럼 위장하는 부작용이 있다(187p 실측). max_output_tokens도
+        # 상향해 truncation을 줄인다. --thinking 옵션으로 켜면 수기 체크박스·한글이름 판독 정밀도가
+        # 올라가나(소형 문서 보조 패치용), 장문 전사 Primary로는 끄고 쓴다.
+        gen_config = types.GenerateContentConfig(max_output_tokens=65536)
+        if not use_thinking:
+            gen_config.thinking_config = types.ThinkingConfig(thinking_budget=0)
+
+        def _call():
+            return client.models.generate_content(
+                model="gemini-flash-latest",
+                contents=[
+                    types.Part.from_bytes(data=file_data, mime_type=mime_type),
+                    prompt
+                ],
+                config=gen_config,
+            )
+
+        # Gemini API 호출 (thinking 모델은 간헐적으로 text=None 응답을 반환 → 1회 재시도)
+        response = _call()
+        markdown_content = response.text
+        if markdown_content is None:
+            print("경고: 빈 응답(text=None) 수신, 1회 재시도합니다...")
+            response = _call()
+            markdown_content = response.text
+        if markdown_content is None:
+            fr = response.candidates[0].finish_reason if response.candidates else "?"
+            print(f"오류: 텍스트 추출 실패 (finish_reason={fr}). 출력 파일을 생성하지 않습니다.")
+            return
+        # 장문 truncation 경고
+        if response.candidates and "MAX_TOKENS" in str(response.candidates[0].finish_reason):
+            print("경고: 출력이 max_output_tokens(65536)에 도달해 잘렸을 수 있습니다. "
+                  "장문 문서는 Gemini 부적합 — LlamaParse v2/Mistral를 Primary로 쓰세요.")
 
         # 결과 저장
-        markdown_content = response.text
         output_file = get_output_filename(input_file)
 
         with open(output_file, "w", encoding="utf-8") as f:
@@ -97,11 +122,13 @@ def main():
         print(f"변환 완료! {len(markdown_content)}글자가 저장되었습니다.")
         print(f"출력 파일: {output_file}")
 
-    # 명령줄 인수로 파일 경로 받기
-    print(f"인수: {sys.argv}")
+    # 명령줄 인수 파싱 (--thinking 옵션 분리)
+    use_thinking = "--thinking" in sys.argv
+    args = [a for a in sys.argv[1:] if a != "--thinking"]
+    print(f"인수: {sys.argv} (thinking={'ON' if use_thinking else 'OFF'})")
 
-    if len(sys.argv) > 1:
-        input_file = sys.argv[1]
+    if len(args) > 0:
+        input_file = args[0]
         print(f"입력 경로: {input_file}")
 
         ext = os.path.splitext(input_file)[1].lower()

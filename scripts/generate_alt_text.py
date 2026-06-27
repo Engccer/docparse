@@ -208,8 +208,8 @@ def main():
                         help="이미 한국어인 alt는 건너뛰고 영문 alt만 재생성")
     parser.add_argument("--dpi", type=int, default=120,
                         help="페이지 렌더링 DPI (기본 120)")
-    parser.add_argument("--model", default="gemini-2.5-flash",
-                        help="Gemini 모델 (기본 gemini-2.5-flash)")
+    parser.add_argument("--model", default="gemini-flash-latest",
+                        help="Gemini 모델 (기본 gemini-flash-latest, 서버측 stable flash 자동 추적)")
     parser.add_argument("--prompt", type=Path,
                         help="custom 프롬프트 템플릿 파일. {alt_list} 자리표시자 포함")
     args = parser.parse_args()
