@@ -1,6 +1,6 @@
 # 후처리 패턴 (Step 4 / Step 7)
 
-`_llamaparse.md` 또는 `_opendataloader.md`를 `_fused_v3.md`로 복사한 뒤 LLM 교차 검증 전에 적용하는 정규식·구조 정리 패턴 모음.
+`_llamaparse.md` 또는 `_opendataloader.md`를 `_fused_v3_<파서조합>.md`(Primary 파서명으로 시작, 예 `_fused_v3_llamaparse.md`)로 복사한 뒤 LLM 교차 검증 전에 적용하는 정규식·구조 정리 패턴 모음. 파일명 규칙은 SKILL.md Step 4 참조.
 
 ## LlamaParse v2 Primary 후처리 (medium~xlarge 기본)
 
@@ -141,7 +141,7 @@ v2가 페이지 경계 번호를 `<page_number>N</page_number>` 태그(번호가
 `normalize_odl.py`로 일괄 처리:
 
 ```bash
-python <스킬루트>/scripts/normalize_odl.py "<odl_output.md>" "<fused_output.md>"
+python <스킬루트>/scripts/normalize_odl.py "<odl_output.md>" "<파일명>_fused_v3_opendataloader.md"
 ```
 
 스크립트가 자동 처리하는 항목:
@@ -156,7 +156,7 @@ python <스킬루트>/scripts/normalize_odl.py "<odl_output.md>" "<fused_output.
 
 ## Step 7: 최종 노이즈 정리 (Primary 무관)
 
-LLM이 `_fused_v3.md`를 최종 점검하며 남은 아티팩트 제거:
+LLM이 최종 fused 파일(`_fused_v3_<파서조합>.md`)을 최종 점검하며 남은 아티팩트 제거:
 
 - **OCR 아티팩트**: `一`, `□` 등 특수문자 오인식.
 - **페이지 경계 고아 줄**: 문장이 잘린 채 남은 짧은 줄.

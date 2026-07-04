@@ -79,7 +79,7 @@ cp .env.example .env
 /docparse input.pdf --lang en   # 비한국어 문서
 ```
 
-스킬은 전체 적응형 워크플로를 실행합니다: 진단, 파서 선택, 실행, Primary + Patch 퓨전, 교차검증, `<name>_fused_v3.md` 작성. 이때 중간 파서 출력은 `_work-docparse/` 폴더로 이동합니다.
+스킬은 전체 적응형 워크플로를 실행합니다: 진단, 파서 선택, 실행, Primary + Patch 퓨전, 교차검증, `<name>_fused_v3_<파서조합>.md` 작성. 파일명의 `<파서조합>`은 실제로 통합에 반영된 파서를 Primary부터 `+`로 나열합니다(예: `_fused_v3_llamaparse+upstage.md`, 단독이면 `_fused_v3_mistral.md`). 이때 중간 파서 출력은 `_work-docparse/` 폴더로 이동합니다.
 
 ### 개별 파서 직접 실행
 

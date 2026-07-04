@@ -163,10 +163,12 @@ timeout 300 python <스킬루트>/parsers/upstage_parse.py "<파일.hwpx>" < /de
 
 ### Step 4: Primary base 생성
 
+**최종 산출 파일명 규칙** (fused에 어느 파서를 통합했는지 파일명으로 드러낸다): 최종 fused 파일은 `<파일명>_fused_v3_<파서조합>.md`로 명명한다. `<파서조합>`은 **실제로 이 결과물에 내용이 반영된 파서만** Primary부터 나열하고 `+`로 잇는다. 파서 토큰은 개별 출력 접미사와 동일하게 쓴다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`corepin`·`gvision`. 단순 대조만 하고 텍스트를 병합하지 않은 파서는 넣지 않는다(파일명이 곧 "무엇을 합쳤는가"의 기록이므로). 예: LlamaParse Primary에 Upstage heading·메타데이터를 패치하면 `_fused_v3_llamaparse+upstage.md`, Mistral 단독 채택이면 `_fused_v3_mistral.md`, hwpx_local 단독이면 `_fused_v3_hwpxlocal.md`. **Primary base를 만들 때는 Primary 파서명만 붙이고, Step 6에서 보조 파서 내용을 실제로 반영할 때마다 파일명에 `+<파서>`를 덧붙여 rename한다.**
+
 #### LlamaParse v2 Primary
 
 ```bash
-cp "<파일명>_llamaparse.md" "<파일명>_fused_v3.md"
+cp "<파일명>_llamaparse.md" "<파일명>_fused_v3_llamaparse.md"
 ```
 
 텍스트 위주 문서(법률·논문·보고서)는 이미지 placeholder만 정리하면 즉시 퓨전 진입 가능. **인쇄용 책자·다이어그램 풍부 문서**(인포그래픽·챕터 표지·헤더 inline 아이콘 등)는 `references/postprocess.md`의 v2 후처리 7가지 패턴 적용.
@@ -184,7 +186,7 @@ python <스킬루트>/scripts/generate_alt_text.py \
 #### ODL Primary (폴백)
 
 ```bash
-python <스킬루트>/scripts/normalize_odl.py "<odl_output.md>" "<fused_output.md>"
+python <스킬루트>/scripts/normalize_odl.py "<odl_output.md>" "<파일명>_fused_v3_opendataloader.md"
 ```
 
 자동 처리 항목 상세는 `references/postprocess.md` 참조.
@@ -214,7 +216,7 @@ python <스킬루트>/scripts/compare_outputs.py "<primary.md>" "<upstage.md>"
 
 **6b. 텍스트·숫자 교차 검증**
 
-`_fused_v3.md`의 대표 구간 3~5곳(시작부·중간부·표 밀집 구간·끝부분)을 보조 파서 출력과 비교. 보조 파서가 더 정확하면 교체, 둘 다 다르고 판단 불가하면 Mistral 추가. **LlamaParse v2 메타데이터 생략 경향** (출력자·전자서명자·원본대조필 등 행정 메타데이터)은 Upstage에서 보완.
+현재 fused 파일(`_fused_v3_<파서조합>.md`)의 대표 구간 3~5곳(시작부·중간부·표 밀집 구간·끝부분)을 보조 파서 출력과 비교. 보조 파서가 더 정확하면 교체, 둘 다 다르고 판단 불가하면 Mistral 추가. **LlamaParse v2 메타데이터 생략 경향** (출력자·전자서명자·원본대조필 등 행정 메타데이터)은 Upstage에서 보완. **보조 파서의 텍스트를 실제로 반영(교체·패치)했다면, 파일명의 `<파서조합>`에 그 파서를 `+<파서>`로 추가해 rename한다**(Step 4 명명 규칙).
 
 **6c. 표 데이터 정합성**
 
@@ -222,13 +224,13 @@ python <스킬루트>/scripts/compare_outputs.py "<primary.md>" "<upstage.md>"
 
 ### Step 7: 최종 노이즈 정리
 
-`_fused_v3.md` 최종 점검. OCR 아티팩트(`一`, `□`), 페이지 경계 고아 줄, 중복 heading, 환각 텍스트, 이미지 placeholder 잔재, Upstage OCR 단어 분절, HTML 체크박스 아티팩트, 반복 페이지 푸터 등. 상세 체크리스트는 `references/postprocess.md` Step 7 절.
+최종 fused 파일(`_fused_v3_<파서조합>.md`) 최종 점검. OCR 아티팩트(`一`, `□`), 페이지 경계 고아 줄, 중복 heading, 환각 텍스트, 이미지 placeholder 잔재, Upstage OCR 단어 분절, HTML 체크박스 아티팩트, 반복 페이지 푸터 등. 상세 체크리스트는 `references/postprocess.md` Step 7 절.
 
 ### Step 8: 출력 및 정리
 
-**원칙**: 최종 결과물(`_fused_v3.md`)은 작업 폴더에 남기고, 그 전까지의 부산물(개별 파서 출력)은 `_work-docparse/` 하위 폴더로 격리한다. 폴더명은 출처(docparse) + 성격(work=중간 작업물)을 드러내며, hwpx-automation 스킬의 `_work-hwpx-automation/`과 접미사 규칙이 통일된다.
+**원칙**: 최종 결과물(`_fused_v3_<파서조합>.md`)은 작업 폴더에 남기고, 그 전까지의 부산물(개별 파서 출력)은 `_work-docparse/` 하위 폴더로 격리한다. 폴더명은 출처(docparse) + 성격(work=중간 작업물)을 드러내며, hwpx-automation 스킬의 `_work-hwpx-automation/`과 접미사 규칙이 통일된다.
 
-1. `[파일명]_fused_v3.md`로 작업 폴더에 저장.
+1. `[파일명]_fused_v3_<파서조합>.md`로 작업 폴더에 저장(파서조합 명명 규칙은 Step 4 참조). **저장 직전, 파일명의 파서 목록이 실제로 내용이 반영된 파서와 일치하는지 확인한다**(Primary만 쓰고 보조 파서를 반영했는데 rename을 빠뜨리지 않도록).
 2. 대화에 요약 출력: 페이지 수·티어·사용 파서·실패/타임아웃 파서·퓨전 방식·자동화 교정 항목 수·LLM 교차 검증 결과·최종 줄 수·표 개수 + **Step 9의 두 결과**(추가 교차검증 실행/불필요와 근거, 규칙 문서 반영 내역).
 3. 개별 파서 출력을 `_work-docparse/` 하위 폴더로 이동:
 
@@ -236,7 +238,7 @@ python <스킬루트>/scripts/compare_outputs.py "<primary.md>" "<upstage.md>"
 mkdir -p "<파일 디렉토리>/_work-docparse"
 mv "<파일명>_llamaparse.md" "<파일명>_upstage.md" "<파일 디렉토리>/_work-docparse/"
 # 사용된 경우 _gemini.md, _mistral.md, _opendataloader.md, _hwpxlocal.md도 이동
-# (HWPX 티어: hwpx_local 단독이면 _hwpxlocal.md를 _fused_v3.md로 채택)
+# (HWPX 티어: hwpx_local 단독이면 _hwpxlocal.md를 _fused_v3_hwpxlocal.md로 채택)
 ```
 
 ### Step 9: 사후 절차: 추가 교차검증 검토 + 학습 반영 (생략 불가)

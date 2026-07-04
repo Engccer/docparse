@@ -10,7 +10,7 @@ ODL Primary 출력에서 자동화 가능한 항목을 일괄 처리:
 
 사용법:
   python normalize_odl.py <input_odl.md> [output.md]
-  - output 생략 시 [파일명]_fused.md로 저장
+  - output 생략 시 [파일명]_fused_v3_opendataloader.md로 저장
 """
 import re
 import sys
@@ -85,7 +85,7 @@ def normalize_odl(input_path, output_path=None):
         base = os.path.splitext(input_path)[0]
         # _opendataloader 접미사 제거
         base = re.sub(r"_opendataloader$", "", base)
-        output_path = base + "_fused.md"
+        output_path = base + "_fused_v3_opendataloader.md"
 
     with open(input_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
@@ -222,7 +222,7 @@ def normalize_odl(input_path, output_path=None):
 def main():
     if len(sys.argv) < 2:
         print("사용법: python normalize_odl.py <input_odl.md> [output.md]")
-        print("  output 생략 시 [파일명]_fused.md로 저장")
+        print("  output 생략 시 [파일명]_fused_v3_opendataloader.md로 저장")
         return
 
     input_path = sys.argv[1]

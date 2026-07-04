@@ -2,6 +2,15 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
+## [3.18] - 2026-07-05
+
+### 변경
+- **최종 fused 파일명에 파서 조합 명시**: `_fused_v3.md` → `_fused_v3_<파서조합>.md`. 파일명만으로 어느 파서를 통합했는지 알 수 있도록, **실제로 내용이 반영된 파서**를 Primary부터 `+`로 나열(예: LlamaParse Primary+Upstage 패치 → `_fused_v3_llamaparse+upstage.md`, 단독 채택 → `_fused_v3_mistral.md`·`_fused_v3_hwpxlocal.md`). 단순 대조만 하고 병합하지 않은 파서는 제외. 파서 토큰은 개별 출력 접미사와 동일(`llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`corepin`·`gvision`).
+- SKILL.md: Step 4에 명명 규칙 신설, Step 6b에 보조 파서 반영 시 `+<파서>` rename 지침, Step 8에 저장 직전 파일명·반영 파서 일치 검증 추가.
+- `.gitignore`: `*_fused_v3.md` → `*_fused_v3*.md`로 확장(파서 접미사 붙은 산출물도 무시).
+- `scripts/normalize_odl.py`: 기본 출력 `_fused.md` → `_fused_v3_opendataloader.md`.
+- README·gotchas·postprocess 참조 일괄 갱신.
+
 ## [3.17] - 2026-06-28
 
 ### 변경
