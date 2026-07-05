@@ -18,6 +18,9 @@
 - **Gemini 3.5-flash(thinking)는 장문을 "요약"한다**: `gemini-flash-latest`=`gemini-3.5-flash`는 thinking 모델이라, thinking이 켜진 채 장문(≳20p)을 받으면 전사를 포기하고 모델이 직접 요약한다. 187p 실측에서 17개 섹션 중 14개 상세 표를 버리고 `## [이후 페이지 요약…]`로 대체했는데, **완결된 문서처럼 위장**돼 누락 발견이 어렵다(구 2.5는 정직하게 truncate). `gemini_parse.py`는 기본 `thinking_budget=0` + `max_output_tokens=65536`으로 이를 막는다. 단 thinking을 끄면 수기 자필 체크박스 판독이 무너지므로 체크박스·정밀 판독 보조는 `--thinking`으로 켜서 별도 호출 (2026-06-28, 부록 M).
 - **Gemini thinking 모델은 간헐적으로 `response.text=None`을 반환**: finish_reason이 STOP이고 출력 토큰이 있어도 `.text`가 None인 경우가 드물게 발생. `gemini_parse.py`에 None 가드 + 1회 재시도를 넣었다. 직접 호출 코드에서도 `r.text is None` 체크 필수(None을 그대로 write하면 `write() argument must be str, not None` 크래시).
 - **한글 파일명 인자 NFC/NFD 함정**: 공백·괄호가 섞인 한글 파일명을 파서 인자로 넘기면 유니코드 정규화(NFC vs NFD) 차이로 Python `os.path.exists`가 False를 반환해 "파일을 찾을 수 없습니다"로 실패할 수 있다(`ls`로는 보이는데 파서만 실패). 해결: ASCII 임시 파일명으로 `cp` 후 그 경로로 파서 실행(출력도 그 폴더에 생성됨). 백그라운드 `&` 병렬 실행 시 `cd X && cmd1 & cmd2 &`는 cd가 첫 잡에만 적용되니, 입력을 **절대경로**로 주거나 `(cd X && cmd) &` 서브셸로 감쌀 것 (2026-06-28 실측).
+- **macOS에는 `timeout` 명령이 없음**: SKILL.md의 `timeout 300 python ...` 예시는 Linux/Git Bash 기준. macOS(zsh)에서는 `command not found: timeout`(exit 127)로 파서가 실행조차 안 됨. coreutils(gtimeout) 미설치 머신에선 timeout 없이 백그라운드 실행 후 행 걸리면 수동 종료로 대체 (2026-07-06 youjung-macmini 실측).
+- **assess의 `has_text_layer`는 앞쪽 표본 페이지 기준이라 오판 가능**: 표지 몇 장이 통이미지인 보고서(NIA 실태조사 등)는 텍스트 레이어가 있어도 `false`로 나올 수 있다. xlarge에서 `false`가 나오면 OCR 티어로 가기 전에 PyMuPDF로 본문 중간 페이지들(`get_text()`)을 직접 표본 확인할 것 (2026-07-06 NIA 484p 실측: 진단 false, 실제 텍스트 레이어 존재 — OCR 비용 회피).
+- **통계 보고서의 차트(그림) 수치는 이미지라 어떤 텍스트 파서로도 안 나옴**: 텍스트 레이어가 있어도 차트 속 수치는 벡터/이미지. 핵심 수치가 본문 서술문에 반복되는지 확인하고, 산출물에 "그림 데이터 미포함" 한계를 명기할 것. 위 "빈 표 뼈대" 항목과 짝 (2026-07-06 NIA 484p).
 - **다페이지 시각 판독은 서브에이전트에 위임**: 메인 컨텍스트에서 페이지 PNG 수십 장을 직접 Read하면 이미지 누적 한도에 걸려 **이후 새 이미지 첨부가 전부 거부**될 수 있음(특히 폭 2000px 초과 이미지가 섞이면 가속). 절차: ① PyMuPDF로 영역 크롭 생성(폭 1500px 이하 권장) ② 페이지 범위를 3~4분할해 서브에이전트(general-purpose)에 판독 위임 ③ 잔여 쟁점 글자는 같은 에이전트에 SendMessage 후속 질의로 8~14배 확대 재판독. 에이전트가 직접 PyMuPDF로 자기 크롭을 만들게 하면 더 효율적 (2026-06-11 실측).
 
 ## 에러 처리
@@ -25,6 +28,7 @@
 - 파서 실패/타임아웃 → 나머지로 진행 (최소 1개 성공 필요).
 - 1개만 성공 → 해당 결과를 노이즈 정리 후 `_fused_v3_<그 파서>.md`로 저장(예: Mistral만 성공하면 `_fused_v3_mistral.md`), 교차 검증 불가 경고.
 - LlamaParse v2 타임아웃 (xlarge) → ODL 폴백 또는 Upstage로 대체.
+- LlamaParse v2 402(크레딧 소진) → ODL Primary 폴백. 교차검증은 PyMuPDF 독립 추출로 대체 가능(본문 수치 표본 대조 + 표 산술 검증). 대형 문서는 실행 전 `python llamaparse_parse.py --credits`로 잔여 확인이 싸다 (2026-07-06 484p×10크레딧=4,840 필요, 잔여 부족 실측).
 - Upstage 비동기 타임아웃 → 교차검증만 불가, Primary(v2)에 영향 없음.
 - 모든 파서 실패 시 사용자에게 오류 보고.
 
