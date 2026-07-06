@@ -26,3 +26,7 @@ drafts/
 *_hwpxlocal.md
 *_corepin.md
 *_gvision.md
+
+# OS 잡파일
+.DS_Store
+Thumbs.db
