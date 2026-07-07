@@ -124,3 +124,7 @@ docparse는 Claude Code 스킬로 개발됐지만, 구성요소에 따라 다른
 ## 라이선스
 
 MIT. `LICENSE` 참고.
+
+## 관련 프로젝트
+
+시각장애 사용자를 위한 에이전트 스킬 번들 [skills-for-the-blind](https://github.com/Engccer/skills-for-the-blind)의 멤버 스킬이다.
