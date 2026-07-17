@@ -11,7 +11,8 @@
 
 한계: 이미지 안의 텍스트(제목·도표·캡션)는 추출 범위 밖이다. 본문에 이미지가
 있으면 경고하며, 이때는 Upstage(upstage_parse.py)로 교차검증/대체할 것.
-HWP(구형 바이너리)는 먼저 hwpx-automation의 hwp2hwpx.bat로 HWPX 변환 후 입력한다.
+HWP(구형 바이너리)는 먼저 hwpx-automation의 hwp2hwpx.bat(Windows)/hwp2hwpx.sh(macOS/Linux)로
+HWPX 변환 후 입력한다.
 """
 import os
 import sys
@@ -47,7 +48,7 @@ def main():
         ext = os.path.splitext(filename)[1].lower()
         if ext == ".hwp":
             print("오류: HWP(구형 바이너리)는 직접 처리할 수 없습니다.")
-            print("  hwpx-automation의 convert/hwp2hwpx.bat로 HWPX 변환 후 입력하세요.")
+            print("  hwpx-automation의 convert/hwp2hwpx.bat(Windows)/hwp2hwpx.sh(macOS/Linux)로 HWPX 변환 후 입력하세요.")
             return
         if ext not in SUPPORTED_EXTENSIONS:
             print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
