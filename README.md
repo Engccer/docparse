@@ -44,6 +44,7 @@ pip install -r requirements.txt
 
 - **Java 런타임**은 OpenDataLoader 파서(large / xlarge 폴백)에만 필요합니다. 그 외에는 선택 사항입니다.
 - 로컬 HWPX 파서는 `hwpx-tomd` 패키지에 의존합니다(`requirements.txt`로 설치). 이 패키지가 없는 기기에서는 hwpx_local이 설치 안내를 출력하며, Upstage로 폴백할 수 있습니다.
+- 구형 바이너리 **HWP** 파일은 HWPX로 변환한 뒤 투입합니다. 변환 도구는 별도 공개 저장소 [hwpx-automation](https://github.com/Engccer/hwpx-automation)의 `convert/`(JDK 21 기반 hwp2hwpx)를 사용합니다.
 - 모든 파서는 독립적입니다. 의존성이나 API 키가 없으면 그 파서 하나만 설치/설정 안내를 출력하고 나머지는 계속 동작합니다.
 - 클론 후 `python scripts/check_env.py`를 실행하면 어떤 파서가 바로 사용 가능한지, 무엇을 더 설치하거나 설정해야 하는지(키 발급 URL 포함) 한눈에 확인할 수 있습니다. 읽기 전용이라 아무것도 변경하지 않습니다.
 

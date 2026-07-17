@@ -21,7 +21,7 @@
 
 ### 수정
 - 부록 J의 "Mistral `carring→calling` 과잉교정" 사례를 **Gemini 오독으로 정정**(학생이 실제 `calling` 표기). 평가 보고서 부록 M에 반영.
-- 정본 `02_파싱결과/(사업명)…fused.md`에 혼입된 구 Gemini 2.5 자가생성 "요약 통계" 117줄 제거.
+- 정본 `02_파싱결과/…fused.md`(스캔 양식 검증본)에 혼입된 구 Gemini 2.5 자가생성 "요약 통계" 117줄 제거.
 - gotchas.md: Gemini thinking 요약화·`text=None` 함정, 한글 파일명 NFC/NFD 정규화 함정, 백그라운드 `&`+`cd` 함정 추가.
 
 > 결론: **Primary 순위는 대부분 유지**(텍스트PDF=LlamaParse v2, 스캔양식=Upstage+Mistral, 수기=GV+Opus 캐스케이드). 변화는 Gemini 장문 Primary 금지 명문화 + 보조 역할 재배치, Mistral 폴백 가치 상승. 상세: 비교평가 보고서 부록 M.
