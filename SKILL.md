@@ -6,6 +6,8 @@ description: >
   트리거: (1) 문서를 최고 품질로 파싱하고 싶을 때 (2) /docparse 명령 사용 시
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
+metadata:
+  version: "1.0.0"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
