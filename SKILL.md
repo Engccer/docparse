@@ -7,7 +7,7 @@ description: >
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
@@ -33,6 +33,8 @@ metadata:
 | 스크립트 | 출력 | API | 비고 |
 |---------|------|-----|------|
 | `hwpx_local_parse.py` | `_hwpxlocal.md` | 없음 (로컬) | **HWPX 전용·무료·오프라인**. hwpx-tomd 패키지 엔진(글상자·tail·표 병합 보존, 자가검증 3종). `pip install hwpx-tomd` 필요. 이미지 내 텍스트는 범위 밖(경고). HWP는 hwp2hwpx 변환 후 입력 |
+| `xlsx_local_parse.py` | `_xlsxlocal.md` | 없음 (로컬) | **XLSX 전용·무료·오프라인·비-LLM**. 셀 값·병합 범위·숨김 상태가 파일에 명시된 포맷이라 파싱=읽기. openpyxl 추출 전체를 원시 XML 자체 해석과 값 멀티셋 교차 검증, 불일치 시 출력 미작성. 병합은 앵커+범위 명시, 숨김 데이터 보존·고지, 미계산 수식은 원문 보존. 차트·이미지 내 텍스트는 범위 밖(경고) |
+| `docx_local_parse.py` | `_docxlocal.md` | 없음 (로컬) | **DOCX 전용·무료·오프라인·비-LLM**. 본문 블록(헤딩·단락·표)을 문서 순서대로 추출, document.xml 전수 recall 토큰 대조 내장. 텍스트박스·필드·각주 등 python-docx 사각지대는 누락으로 드러나 즉시 거부(조용한 유실 차단). 중첩 표 거부, 이미지 내 텍스트는 범위 밖(경고) |
 | `pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬) | **괘선 표 PDF 전용(Tier 0)·무료·오프라인·비-LLM**. 격자 추출 + 좌표 재배치 양방향 자가검증(열 배정 오류·값 소실 검출) + PyMuPDF find_tables 독립 2엔진 교차 투표, 빈 셀 보존, 환각·무단교정 구조적으로 없음. 스캔(출력 0)·괘선 없는 표·병합 셀은 범위 밖 |
 | `upstage_parse.py` | `_upstage.md` | UPSTAGE_API_KEY | 기준선, 노이즈 필터링 최강, 완전성 최고 |
 | `gemini_parse.py` | `_gemini.md` | GEMINI_API_KEY | `gemini-3.5-flash`(thinking 모델). 텍스트 품질·체크박스·한글이름 최상이나 **장문에서 요약화 위험**. 기본 `thinking_budget=0`(요약화 방지·충실 전사), `--thinking`으로 켜면 체크박스·정밀 판독↑(소형 보조용). small(≤15p)만 Primary |
@@ -72,6 +74,8 @@ metadata:
 | 파서 | 종합 | 완전성 | 텍스트 | Heading | 표 | 제한 |
 |------|------|-------|--------|---------|----|------|
 | **hwpx_local** (HWPX) | A | A+ (글자·마커 100%) | A | B (원문 구조 그대로) | A (cellAddr/cellSpan 그리드) | HWPX 전용, 이미지 내 텍스트 불가, 레이아웃은 근사 |
+| **xlsx_local** (XLSX) | A (XLSX 한정) | A+ (원시 XML 대조 PASS 시) | A+ (literal, 환각 0) | F (미생성) | A+ (병합 범위 명시 보존) | XLSX 전용. 차트·이미지 내 텍스트 불가, 미계산 수식은 원문 표기 |
+| **docx_local** (DOCX) | A (DOCX 한정) | A+ (전수 recall PASS 시) | A+ (literal, 환각 0) | A (헤딩 스타일 그대로) | A (셀 명시, 중첩 표 거부) | DOCX 전용. 텍스트박스·각주 있으면 거부(승격), 이미지 내 텍스트 불가 |
 | **pdfplumber** (괘선 표) | A (대상 대역 한정) | A+ (셀 전수·빈 셀 보존) | A+ (literal, 환각 0) | F (미생성) | **A+ (자가검증·2엔진 교차 투표 PASS 시)** | 괘선+텍스트 레이어 전용. 스캔 출력 0, 병합 셀·괘선 없는 표 깨짐, 산문·헤딩 범위 밖 |
 | **Upstage** | A | A+ (100%) | A | A | A- | 동기 100p 제한, 스캔 OCR 단어 분절 |
 | **LlamaParse v2** | A | A | A | A+ | **A+** | 10크레딧/p, 스캔 수기 양식 열 이동 1건 |
@@ -88,7 +92,7 @@ metadata:
 python "<스킬루트>/scripts/check_env.py"
 ```
 
-파서별 의존 패키지·API 키 준비 상태와 키 발급 URL을 한 번에 출력한다(읽기 전용, 아무것도 설치하지 않음). 처음 클론한 환경이거나 특정 파서가 키·패키지 누락으로 실패하면 먼저 실행해 무엇을 설치·설정할지 확인한다. 무료 로컬 파서(hwpx_local·opendataloader)는 키 없이 바로 쓸 수 있다. 매 작업마다 필요한 절차는 아니므로, 환경이 준비된 뒤에는 건너뛴다.
+파서별 의존 패키지·API 키 준비 상태와 키 발급 URL을 한 번에 출력한다(읽기 전용, 아무것도 설치하지 않음). 처음 클론한 환경이거나 특정 파서가 키·패키지 누락으로 실패하면 먼저 실행해 무엇을 설치·설정할지 확인한다. 무료 로컬 파서(hwpx_local·pdfplumber·xlsx_local·docx_local·opendataloader)는 키 없이 바로 쓸 수 있다. 매 작업마다 필요한 절차는 아니므로, 환경이 준비된 뒤에는 건너뛴다.
 
 ### Step 1: 사전 진단
 
@@ -106,12 +110,14 @@ JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 
 |------|------|----------|---------|
 | **t0** | PDF + 텍스트 레이어 + 괘선 격자(`table_hint`) + 목표 산출물이 표 데이터 | pdfplumber(로컬·무료) 우선, 자가검증·교차 투표 실패 시 아래 티어로 승격 | pdfplumber |
 | **hwpx** | HWPX 파일 | hwpx_local(로컬·무료) 우선, 이미지·레이아웃 중요 시 Upstage 교차/대체 | hwpx_local |
+| **xlsx** | XLSX 파일 | xlsx_local(로컬·무료) 우선, 검증 실패·차트 텍스트 중요 시 Upstage·LlamaParse | xlsx_local |
+| **docx** | DOCX 파일 | docx_local(로컬·무료) 우선, 거부(텍스트박스·각주 등) 시 Upstage·LlamaParse | docx_local |
 | **small** | PDF ≤15p | Gemini 단독 | Gemini |
 | **medium** | PDF 16~60p | LlamaParse v2 + Upstage | LlamaParse v2 |
 | **large** | PDF 61~100p | LlamaParse v2 + ODL | LlamaParse v2 |
 | **xlarge** | PDF 101p+ | LlamaParse v2 + ODL | LlamaParse v2 |
 
-**Tier 0 (결정론 우선 게이트, 2026-08-10)**: `table_hint: true`(벡터 괘선 격자) + `has_text_layer: true`이고 **목표 산출물이 산문이 아니라 표 데이터**(시간표·명렬표·집계표·주간학습안내 등 행정 문서)면, 페이지 수 티어보다 먼저 `pdfplumber_parse.py`(로컬·무료·비-LLM)를 시도한다. 원본이 명시적일 때(그려진 격자 + 임베딩된 글자) LLM 추론은 순수한 하방 위험이기 때문이다. 격자 모델(extract_tables)과 좌표 모델(extract_words)의 셀 단위 양방향 대조 자가검증이 내장돼 열 배정 오류까지 기계로 잡히고, 구현을 공유하지 않는 PyMuPDF find_tables 독립 2엔진 교차 투표가 한 겹 더해져 격자·좌표가 같은 상류 결함을 공유하는 오류까지 막는다(육안 대조 없이 검증이 닫힘). **PASS면 그대로 채택(`_fused_v3_pdfplumber.md`)하고 Step 5~7의 LLM 교차 검증은 생략 가능**, 경고(셀 불일치·미배정 단어·병합 의심 셀·교차 엔진 불일치·표 미검출)가 하나라도 뜨면 파서가 출력 파일을 만들지 않으므로 기본 티어 표로 승격한다. 적용 경계·상세는 `references/tier-rules.md`의 "괘선 정형 표 PDF" 절.
+**Tier 0 (결정론 우선 게이트, 2026-08-10)**: `table_hint: true`(벡터 괘선 격자) + `has_text_layer: true`이고 **목표 산출물이 산문이 아니라 표 데이터**(시간표·명렬표·집계표·주간학습안내 등 행정 문서)면, 페이지 수 티어보다 먼저 `pdfplumber_parse.py`(로컬·무료·비-LLM)를 시도한다. 원본이 명시적일 때(그려진 격자 + 임베딩된 글자) LLM 추론은 순수한 하방 위험이기 때문이다. 격자 모델(extract_tables)과 좌표 모델(extract_words)의 셀 단위 양방향 대조 자가검증이 내장돼 열 배정 오류까지 기계로 잡히고, 구현을 공유하지 않는 PyMuPDF find_tables 독립 2엔진 교차 투표가 한 겹 더해져 격자·좌표가 같은 상류 결함을 공유하는 오류까지 막는다(육안 대조 없이 검증이 닫힘). **PASS면 그대로 채택(`_fused_v3_pdfplumber.md`)하고 Step 5~7의 LLM 교차 검증은 생략 가능**, 경고(셀 불일치·미배정 단어·병합 의심 셀·교차 엔진 불일치·표 미검출)가 하나라도 뜨면 파서가 출력 파일을 만들지 않으므로 기본 티어 표로 승격한다. 적용 경계·상세는 `references/tier-rules.md`의 "괘선 정형 표 PDF" 절. 괘선 없는 정렬 표는 opt-in `--strategy text`로 시도할 수 있다(2026-08-11): 두 엔진 text 전략 교차 투표 + 단어↔셀 대조가 게이트이며, 괘선이 없으면 열 구획 정보가 문서에 없으므로 PASS의 의미는 "단어 보존 + 2엔진 구조 수렴"까지다(상세는 tier-rules).
 
 **HWPX 티어**: `assess_document.py`가 `format: "hwpx"`로 진단 시 **로컬·무료 파서 `hwpx_local_parse.py`(hwpx-tomd 엔진)를 먼저** 쓴다. 글상자(drawText) reading-order 수집, `<hp:t>` tail 보존(객관식 선택지 ②③⑤ 누락 방지), 표 cellAddr/cellSpan 그리드 배치(세로·가로 병합 보존)가 검증됐다. 실문서 33종에서 원본 `<hp:t>` 대비 글자 멀티셋 손실 0·객관식 마커 손실 0(문자·마커 단위 완벽 보존)이고, 변환 후 자가검증 3종(단어 recall + 글자 멀티셋 recall + 객관식 마커 보존 가드)이 조용한 누락을 막는다(2026-06-06).
 
@@ -119,7 +125,9 @@ JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 
 
 **self-contained 단서**: hwpx_local은 `hwpx-tomd` 패키지(`pip install hwpx-tomd`, PyPI·GitHub `Engccer/hwpx-tomd` 공개)에 의존한다. 미설치 디바이스에서는 hwpx_local이 설치 안내를 출력하며 동작하지 않으므로 **Upstage 단독으로 폴백**한다. 암호화(AES) 배포본은 hwpx_local이 자동 감지해 안내하며 Upstage도 파싱 불가다. HWPX **편집**(`--set-cell`/`--find` 등)과 HWP→HWPX 변환은 `hwpx-automation` 스킬을 쓴다.
 
-HWP는 먼저 `hwpx-automation` 스킬의 `convert/hwp2hwpx.bat`(Windows) 또는 `convert/hwp2hwpx.sh`(macOS/Linux)로 HWPX 변환 후 진입. 다른 비PDF 포맷(DOCX·PPTX·XLSX 등)은 미검증.
+**Office 로컬 티어 (XLSX·DOCX, 2026-08-11)**: XLSX·DOCX는 셀 값·병합 범위·헤딩 스타일이 파일 XML에 명시된 포맷이라 Tier 0 철학(원본이 명시적이면 LLM 추론은 하방 위험)이 그대로 적용된다. `xlsx_local_parse.py`(openpyxl + 원시 XML 값 멀티셋 교차 검증)·`docx_local_parse.py`(python-docx + document.xml 전수 recall 대조)를 먼저 쓰고, **PASS면 그대로 채택**(`_fused_v3_xlsxlocal.md`/`_fused_v3_docxlocal.md`, LLM 교차 검증 생략 가능). 거부(검증 불일치·텍스트박스·각주·중첩 표) 시 Upstage·LlamaParse로 승격한다. 실측(2026-08-11): 실제 법률안 DOCX 토큰 1,063건 완전 일치 PASS, 병합 263범위 동아리 명부 XLSX PASS, 각주 있는 보고서·텍스트박스 픽스처는 정확히 거부.
+
+HWP는 먼저 `hwpx-automation` 스킬의 `convert/hwp2hwpx.bat`(Windows) 또는 `convert/hwp2hwpx.sh`(macOS/Linux)로 HWPX 변환 후 진입. 다른 비PDF 포맷(PPTX 등)은 미검증.
 
 **hwpx_local 변환 결함은 공유 엔진(hwpx-tomd) 소관**: hwpx_local의 변환 누락·표 정렬 붕괴·마커 손실을 발견하면, 이는 docparse 파서 스크립트가 아니라 **`hwpx_local_parse.py`와 `hwpx-automation`의 `hwpx_edit.py --to-md`가 공유하는 변환 엔진 `hwpx-tomd`(`core.py`)의 결함**이다(다른 PDF 파서들과 달리 hwpx_local만 이 외부 엔진을 공유한다). 엔진은 PyPI·GitHub(Engccer/hwpx-tomd)로 공개돼 있고 **GitHub가 단일 진실 원천(SSoT)**이다. 처리 절차(엔진 repo의 `CONTRIBUTING.md`가 정본): `hwpx-tomd`의 `tests/test_hwpx_tomd.py`에 **실패하는 회귀 테스트를 먼저 추가** → `core.py` 수정 → 버전(`_version.py`) bump → `git push` → PyPI publish. 엔진을 editable로 설치(`pip install -e`)한 환경에서는 수정이 즉시 반영되고, PyPI 설치만 된 환경에서는 `pip install -U hwpx-tomd`로 받는다. 반대로 변환이 아닌 노이즈 필터링·티어 선택·퓨전 등 docparse 고유 로직의 개선은 이 저장소에서 처리하고, 사용자에게 영향이 있으면 `CHANGELOG.md`에 기록한다.
 
@@ -139,7 +147,7 @@ HWP는 먼저 `hwpx-automation` 스킬의 `convert/hwp2hwpx.bat`(Windows) 또는
 - 수기 학생 답안 합본 (자유 서술 손글씨 + 체크박스, 오기 보존 critical, v2 단어 환각 경계, 전 페이지 시각 판독 필수)
 - 영어 비율 ≥50% / 정형화 양식 (Mistral Primary 후보)
 - 의무기록·법률문서·계약서 (정확성 critical, 3자 교차)
-- 비PDF 포맷 중 HWPX 외 (DOCX·PPTX·XLSX·이미지): 검증 전, tier-rules 참조. HWPX는 기본 티어 표의 `hwpx` 행으로 처리
+- 비PDF 포맷 중 HWPX·XLSX·DOCX 외 (PPTX·이미지): 검증 전, tier-rules 참조. HWPX·XLSX·DOCX는 기본 티어 표의 해당 행으로 처리
 - ≤20p 소형 PDF (Read 시각 렌더링 = ground truth)
 
 ### Step 3: 파서 실행
@@ -163,6 +171,14 @@ wait
 ```bash
 # t0 티어 예 (괘선 표 PDF, 로컬·무료·1초 내외. PASS/경고를 표준 출력으로 보고)
 timeout 300 python <스킬루트>/parsers/pdfplumber_parse.py "<파일경로>" < /dev/null
+# 괘선 없는 정렬 표(opt-in): text 전략 + 2엔진 교차 투표
+timeout 300 python <스킬루트>/parsers/pdfplumber_parse.py "<파일경로>" --strategy text < /dev/null
+```
+
+```bash
+# xlsx·docx 티어 예 (로컬·무료. PASS/거부를 표준 출력으로 보고)
+timeout 300 python <스킬루트>/parsers/xlsx_local_parse.py "<파일.xlsx>" < /dev/null
+timeout 300 python <스킬루트>/parsers/docx_local_parse.py "<파일.docx>" < /dev/null
 ```
 
 ```bash
@@ -176,7 +192,7 @@ timeout 300 python <스킬루트>/parsers/upstage_parse.py "<파일.hwpx>" < /de
 
 ### Step 4: Primary base 생성
 
-**최종 산출 파일명 규칙** (fused에 어느 파서를 통합했는지 파일명으로 드러낸다): 최종 fused 파일은 `<파일명>_fused_v3_<파서조합>.md`로 명명한다. `<파서조합>`은 **실제로 이 결과물에 내용이 반영된 파서만** Primary부터 나열하고 `+`로 잇는다. 파서 토큰은 개별 출력 접미사와 동일하게 쓴다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`pdfplumber`·`corepin`·`gvision`. 단순 대조만 하고 텍스트를 병합하지 않은 파서는 넣지 않는다(파일명이 곧 "무엇을 합쳤는가"의 기록이므로). 예: LlamaParse Primary에 Upstage heading·메타데이터를 패치하면 `_fused_v3_llamaparse+upstage.md`, Mistral 단독 채택이면 `_fused_v3_mistral.md`, hwpx_local 단독이면 `_fused_v3_hwpxlocal.md`. **Primary base를 만들 때는 Primary 파서명만 붙이고, Step 6에서 보조 파서 내용을 실제로 반영할 때마다 파일명에 `+<파서>`를 덧붙여 rename한다.**
+**최종 산출 파일명 규칙** (fused에 어느 파서를 통합했는지 파일명으로 드러낸다): 최종 fused 파일은 `<파일명>_fused_v3_<파서조합>.md`로 명명한다. `<파서조합>`은 **실제로 이 결과물에 내용이 반영된 파서만** Primary부터 나열하고 `+`로 잇는다. 파서 토큰은 개별 출력 접미사와 동일하게 쓴다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`pdfplumber`·`xlsxlocal`·`docxlocal`·`corepin`·`gvision`. 단순 대조만 하고 텍스트를 병합하지 않은 파서는 넣지 않는다(파일명이 곧 "무엇을 합쳤는가"의 기록이므로). 예: LlamaParse Primary에 Upstage heading·메타데이터를 패치하면 `_fused_v3_llamaparse+upstage.md`, Mistral 단독 채택이면 `_fused_v3_mistral.md`, hwpx_local 단독이면 `_fused_v3_hwpxlocal.md`. **Primary base를 만들 때는 Primary 파서명만 붙이고, Step 6에서 보조 파서 내용을 실제로 반영할 때마다 파일명에 `+<파서>`를 덧붙여 rename한다.**
 
 #### LlamaParse v2 Primary
 

@@ -6,10 +6,10 @@
 
 ## 주요 특징
 
-- **적응형 티어 선택**: 사전 점검(페이지 수, 텍스트 레이어, 괘선 격자, 포맷)으로 각 문서를 티어(hwpx / small / medium / large / xlarge)로 분류하고 파서 전략을 자동으로 정합니다. 괘선 격자 + 텍스트 레이어 문서는 결정론 파서(pdfplumber)를 추천 선두에 둡니다(Tier 0).
+- **적응형 티어 선택**: 사전 점검(페이지 수, 텍스트 레이어, 괘선 격자, 포맷)으로 각 문서를 티어(hwpx / xlsx / docx / small / medium / large / xlarge)로 분류하고 파서 전략을 자동으로 정합니다. 괘선 격자 + 텍스트 레이어 문서는 결정론 파서(pdfplumber)를 추천 선두에 두고(Tier 0), XLSX·DOCX도 로컬 결정론 파서를 우선합니다.
 - **Primary + Patch 퓨전**: 한 파서를 Primary 베이스로 삼고, 나머지 파서는 전체를 다시 파싱하는 대신 빠진 부분(누락된 헤딩, 표 셀, 메타데이터)만 패치합니다. 작업을 효율적으로 유지하면서 각 파서의 강점만 끌어옵니다.
 - **다파서 교차검증**: 숫자 표, 헤딩, 날짜, 고유명사를 파서 간에 대조하고, 데이터 무결성 게이트(산술 검증 + 셀 위치 비교)와 불일치 시 다수결로 판정합니다.
-- **무료 로컬 파서 + 유료 클라우드 파서 혼용**: 로컬 엔진(HWPX, pdfplumber, OpenDataLoader)은 비용 없이 오프라인으로 동작하고, 클라우드 엔진(LlamaParse v2, Upstage, Gemini, Mistral, Corepin, Google Vision)은 OCR·레이아웃·고완전성 커버리지를 더합니다. 실제로 호출한 클라우드 파서에 대해서만 비용이 발생합니다.
+- **무료 로컬 파서 + 유료 클라우드 파서 혼용**: 로컬 엔진(HWPX, pdfplumber, XLSX, DOCX, OpenDataLoader)은 비용 없이 오프라인으로 동작하고, 클라우드 엔진(LlamaParse v2, Upstage, Gemini, Mistral, Corepin, Google Vision)은 OCR·레이아웃·고완전성 커버리지를 더합니다. 실제로 호출한 클라우드 파서에 대해서만 비용이 발생합니다.
 
 ## 파서 라인업
 
@@ -17,6 +17,8 @@
 |--------|--------|--------|--------------|------|
 | **hwpx_local** | `parsers/hwpx_local_parse.py` | `_hwpxlocal.md` | 없음 (로컬, 무료) | HWPX 전용, 오프라인. 글상자·`<hp:t>` tail·병합 표 셀을 보존하고 자가검증 3종 수행. `hwpx-tomd` 패키지 필요. 이미지 내 텍스트는 범위 밖. |
 | **pdfplumber** | `parsers/pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬, 무료) | 괘선 표 PDF 전용(Tier 0), 오프라인, 비-LLM. 격자 추출과 좌표 재배치를 셀 단위로 양방향 대조하는 자가검증 + PyMuPDF find_tables 독립 2엔진 교차 투표 내장(열 배정 오류·공유 상류 결함 검출), 빈 셀 보존. 스캔·병합 셀·산문은 범위 밖. |
+| **xlsx_local** | `parsers/xlsx_local_parse.py` | `_xlsxlocal.md` | 없음 (로컬, 무료) | XLSX 전용, 오프라인, 비-LLM. openpyxl 추출 전체를 원시 XML 자체 해석과 값 멀티셋으로 교차 검증. 병합 범위 명시 보존, 숨김 데이터 보존·고지, 미계산 수식은 원문 보존. 차트·이미지 내 텍스트는 범위 밖. |
+| **docx_local** | `parsers/docx_local_parse.py` | `_docxlocal.md` | 없음 (로컬, 무료) | DOCX 전용, 오프라인, 비-LLM. 본문 순서 보존 추출 + document.xml 전수 recall 대조. 텍스트박스·각주 등 유실 위험 구조는 즉시 거부(승격). 이미지 내 텍스트는 범위 밖. |
 | **upstage** | `parsers/upstage_parse.py` | `_upstage.md` | `UPSTAGE_API_KEY` | 베이스라인. 노이즈 필터링·완전성 최강, 메타데이터 우수. |
 | **gemini** | `parsers/gemini_parse.py` | `_gemini.md` | `GEMINI_API_KEY` | 텍스트 품질·헤딩 최상. 짧은 PDF(30페이지 이하)에서 신뢰. |
 | **llamaparse (LlamaParse v2)** | `parsers/llamaparse_parse.py` | `_llamaparse.md` | `LLAMAPARSE_API_KEY` | medium 이상 PDF의 기본 Primary(agentic 티어). 표 열 정확도·OCR 강함. |
@@ -31,6 +33,8 @@
 |------|-----------|----------|---------|
 | **t0** | PDF + 텍스트 레이어 + 괘선 격자 + 목표가 표 데이터 | pdfplumber 우선, 자가검증 실패 시 아래 티어로 승격 | pdfplumber |
 | **hwpx** | HWPX 파일 | hwpx_local 우선, 이미지/레이아웃 중요 시 Upstage 교차검증 | hwpx_local |
+| **xlsx** | XLSX 파일 | xlsx_local 우선, 검증 실패·차트 텍스트 중요 시 승격 | xlsx_local |
+| **docx** | DOCX 파일 | docx_local 우선, 거부(텍스트박스·각주 등) 시 승격 | docx_local |
 | **small** | PDF 15페이지 이하 | Gemini 단독 | Gemini |
 | **medium** | PDF 16~60페이지 | LlamaParse v2 + Upstage | LlamaParse v2 |
 | **large** | PDF 61~100페이지 | LlamaParse v2 + OpenDataLoader | LlamaParse v2 |
@@ -93,7 +97,9 @@ python parsers/upstage_parse.py input.pdf
 python parsers/llamaparse_parse.py input.pdf
 python parsers/gemini_parse.py input.pdf
 python parsers/hwpx_local_parse.py input.hwpx     # 로컬, 무료, 키 불필요
-python parsers/pdfplumber_parse.py input.pdf      # 로컬, 무료, 괘선 표 전용
+python parsers/pdfplumber_parse.py input.pdf      # 로컬, 무료, 괘선 표 전용 (--strategy text: 괘선 없는 정렬 표)
+python parsers/xlsx_local_parse.py input.xlsx     # 로컬, 무료, XLSX 전용
+python parsers/docx_local_parse.py input.docx     # 로컬, 무료, DOCX 전용
 python parsers/opendataloader_parse.py input.pdf  # 로컬, 무료, Java 필요
 ```
 
@@ -113,6 +119,8 @@ docparse는 Claude Code 스킬로 개발됐지만, 구성요소에 따라 다른
 
 - `hwpx_local` (`hwpx_local_parse.py`): HWPX 전용, `hwpx-tomd` 패키지 필요.
 - `pdfplumber` (`pdfplumber_parse.py`): 괘선 표 + 텍스트 레이어 PDF 전용(Tier 0), `pdfplumber` 패키지 필요.
+- `xlsx_local` (`xlsx_local_parse.py`): XLSX 전용, `openpyxl` 패키지 필요.
+- `docx_local` (`docx_local_parse.py`): DOCX 전용, `python-docx` 패키지 필요.
 - `opendataloader` (`opendataloader_parse.py`): 텍스트 레이어가 있는 PDF 전용, Java 런타임 필요.
 
 **유료 / 클라우드 (API 키 필요):** `upstage`, `gemini`, `llamaparse` (LlamaParse v2), `mistral`, `corepin`, `gvision`. 여러 제공자가 월 무료 할당량을 주며, 가볍거나 가끔 쓰는 용도에는 충분합니다:

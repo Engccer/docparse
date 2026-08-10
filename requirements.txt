@@ -15,6 +15,13 @@ hwpx-tomd>=0.2.0,<1.0.0
 # 괘선 표 PDF Tier 0 파서(pdfplumber_parse.py). 격자 추출 + 좌표 재배치 자가검증 + PyMuPDF 독립 2엔진 교차 투표.
 pdfplumber
 
+# XLSX 로컬 파서(xlsx_local_parse.py). openpyxl 추출 + 원시 XML 값 멀티셋 교차 검증.
+openpyxl
+
+# DOCX 로컬 파서(docx_local_parse.py). 본문 순서 보존 + XML 전수 recall 대조.
+# iter_inner_content·하이퍼링크 포함 Paragraph.text가 1.1.0 신설이라 하한 핀.
+python-docx>=1.1.0
+
 # PDF 로컬 파서(opendataloader_parse.py). 별도로 Java 런타임이 필요하다.
 opendataloader-pdf
 

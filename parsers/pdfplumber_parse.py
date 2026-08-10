@@ -23,9 +23,19 @@ PDF에 대한 서로 독립적인 두 관점이다. 단어 중심 좌표를 셀 
 같은 결과에 도달해야만 PASS다. PyMuPDF 미설치 환경에서는 교차 투표를
 생략하고 그 사실을 명시한다(단일 엔진 검증만으로 동작은 유지).
 
-한계: 스캔본(텍스트 레이어 없음)은 출력 0(OCR 기능 없음), 괘선 없는 표는
-정렬 추정이라 신뢰도 급락, 병합·rowspan 셀은 격자 모델이 깨짐, 다단 산문·헤딩
-위계는 범위 밖. 해당 문서는 기존 티어 파이프라인을 그대로 쓴다.
+--strategy text (opt-in, 2026-08-11 추가): 괘선 없는 정렬 표는 단어 좌표
+정렬로 열을 추정한다(pdfplumber text 전략). 이때 격자·좌표 두 관점이 같은
+단어 좌표에서 나와 자가검증의 독립성이 약해지므로, PyMuPDF text 전략과의
+교차 투표가 필수 게이트다. 열 경계가 단어를 관통해 쪼개는 오탐(산문을 표로
+오인)은 단어↔셀 대조가 잡는다(실측: 산문 PDF에서 두 엔진이 같은 43x14
+쓰레기 표에 수렴했지만 단어 분절 불일치로 거부됨). 주의: 괘선이 없으면 열
+구획 정보가 문서에 존재하지 않으므로, PASS는 "단어 보존 + 2엔진 구조 수렴"
+이지 열 구획이 시각 의도와 일치한다는 보장은 아니다. 렌더링 시 데이터 없는
+빈 간격 행(줄간격 추정 부산물)은 제거한다.
+
+한계: 스캔본(텍스트 레이어 없음)은 출력 0(OCR 기능 없음), 병합·rowspan 셀은
+격자 모델이 깨짐, 다단 산문·헤딩 위계는 범위 밖. 해당 문서는 기존 티어
+파이프라인을 그대로 쓴다.
 """
 import os
 import sys
@@ -57,8 +67,14 @@ def _cell_md(value):
     return " ".join(value.split()).replace("|", "\\|")
 
 
-def _grid_to_markdown(grid):
-    """extract_tables() 격자를 마크다운 표로. 빈 셀은 빈 칸으로 보존."""
+def _grid_to_markdown(grid, drop_empty_rows=False):
+    """extract_tables() 격자를 마크다운 표로. 빈 셀은 빈 칸으로 보존.
+
+    drop_empty_rows: text 전략 전용. 줄간격 추정이 만드는 데이터 없는 간격
+    행만 제거한다(괘선 표의 빈 행은 양식 정보이므로 lines 전략에선 보존).
+    """
+    if drop_empty_rows:
+        grid = [row for row in grid if any(v and str(v).strip() for v in row)]
     if not grid:
         return ""
     width = max(len(row) for row in grid)
@@ -137,7 +153,7 @@ def _bbox_overlap_ratio(a, b):
     return (ix * iy) / smaller if smaller > 0 else 0.0
 
 
-def _fitz_page_tables(filename):
+def _fitz_page_tables(filename, strategy="lines"):
     """PyMuPDF find_tables로 페이지별 [(bbox, grid)] 추출. 미가용이면 None.
 
     fitz.table 첫 사용 시 pymupdf_layout 권유 안내문이 stdout으로 나오므로,
@@ -163,12 +179,12 @@ def _fitz_page_tables(filename):
                 pages.append([
                     ((t.bbox[0] + dx, t.bbox[1] + dy, t.bbox[2] + dx, t.bbox[3] + dy),
                      t.extract())
-                    for t in page.find_tables().tables
+                    for t in page.find_tables(strategy=strategy).tables
                 ])
     return pages
 
 
-def crosscheck_with_fitz(filename, pages_tables):
+def crosscheck_with_fitz(filename, pages_tables, strategy="lines"):
     """pdfplumber 격자를 독립 엔진(PyMuPDF find_tables)과 셀 단위 교차 투표.
 
     verify_page(격자↔좌표)는 pdfplumber 내부의 두 관점이라, 두 관점이 같은
@@ -179,7 +195,7 @@ def crosscheck_with_fitz(filename, pages_tables):
     반환: (대조 셀 수, 문제 목록[str]) 또는 None(PyMuPDF 미가용)
     """
     try:
-        fitz_pages = _fitz_page_tables(filename)
+        fitz_pages = _fitz_page_tables(filename, strategy)
     except Exception as e:
         # fitz가 문서 열기·표 추출에서 죽으면 그 자체를 불일치로 간주(fail-closed)
         return 0, [f"PyMuPDF 실행 오류(교차 투표 실패로 간주): {e}"]
@@ -231,7 +247,7 @@ def crosscheck_with_fitz(filename, pages_tables):
     return checked, problems
 
 
-def _page_body(page, tables, grids):
+def _page_body(page, tables, grids, drop_empty_rows=False):
     """페이지 본문 구성: 표 밖 텍스트 라인과 표를 상단 좌표순으로 배치.
 
     표 밖 텍스트를 통째로 앞에 몰면 표 사이·아래의 캡션이 첫 표보다 앞에 와
@@ -248,7 +264,7 @@ def _page_body(page, tables, grids):
         if text:
             items.append((line["top"], "text", text))
     for table, grid in zip(tables, grids):
-        md = _grid_to_markdown(grid)
+        md = _grid_to_markdown(grid, drop_empty_rows=drop_empty_rows)
         if md:
             items.append((table.bbox[1], "table", md))
     items.sort(key=lambda it: it[0])
@@ -262,7 +278,7 @@ def _page_body(page, tables, grids):
     return [content for _, content in parts]
 
 
-def process_file(filename):
+def process_file(filename, strategy="lines"):
     import pdfplumber
 
     print(f"입력 파일: {filename}")
@@ -275,7 +291,12 @@ def process_file(filename):
         print(f"오류: 파일을 찾을 수 없습니다: {filename}")
         return
 
-    print("추출 중... (pdfplumber 격자 모델 + 좌표 재배치 자가검증)")
+    if strategy == "text":
+        print("추출 중... (pdfplumber text 전략: 괘선 없는 정렬 표 + 좌표 재배치 자가검증)")
+        table_settings = {"vertical_strategy": "text", "horizontal_strategy": "text"}
+    else:
+        print("추출 중... (pdfplumber 격자 모델 + 좌표 재배치 자가검증)")
+        table_settings = None
     sections = []
     total_tables = 0
     total_cells = 0
@@ -289,7 +310,7 @@ def process_file(filename):
     with pdfplumber.open(filename) as pdf:
         page_count = len(pdf.pages)
         for i, page in enumerate(pdf.pages, start=1):
-            tables = page.find_tables()
+            tables = page.find_tables(table_settings)
             grids = [t.extract() for t in tables]
             for table in tables:
                 # 병합(colspan/rowspan) 셀은 None 셀로 나타나고 span 정보가
@@ -304,7 +325,7 @@ def process_file(filename):
             total_tables += len(tables)
             pages_tables.append([(t.bbox, g) for t, g in zip(tables, grids)])
 
-            body = _page_body(page, tables, grids)
+            body = _page_body(page, tables, grids, drop_empty_rows=(strategy == "text"))
             if page_count > 1:
                 body.insert(0, f"## 페이지 {i}")
             sections.append("\n\n".join(body))
@@ -316,14 +337,18 @@ def process_file(filename):
             all_unassigned.extend((i, t) for t in unassigned)
 
     if total_tables == 0:
-        print("경고: 괘선 표를 하나도 찾지 못했습니다. 이 문서는 Tier 0 대상이 아닙니다.")
-        print("→ 스캔본이거나 괘선 없는 표일 수 있습니다. 기존 티어(assess_document.py 추천)를 쓰세요.")
+        if strategy == "text":
+            print("경고: text 전략으로도 정렬 표를 찾지 못했습니다. 이 문서는 Tier 0 대상이 아닙니다.")
+            print("→ 스캔본이거나 표가 없는 문서일 수 있습니다. 기존 티어(assess_document.py 추천)를 쓰세요.")
+        else:
+            print("경고: 괘선 표를 하나도 찾지 못했습니다. 이 문서는 Tier 0 대상이 아닙니다.")
+            print("→ 스캔본이거나 괘선 없는 표일 수 있습니다. 기존 티어(assess_document.py 추천)를 쓰세요.")
         return
 
     print(f"페이지 {page_count} · 표 {total_tables}개 · 셀 {total_cells}개(내용 있는 셀 {total_nonempty})")
     print(f"자가검증(격자 추출 ↔ 좌표 재배치 양방향 대조): 셀 {total_checked}건")
 
-    cross = crosscheck_with_fitz(filename, pages_tables)
+    cross = crosscheck_with_fitz(filename, pages_tables, strategy)
     if cross is None:
         cross_problems = []
         print("[알림] PyMuPDF(fitz) 미가용: 독립 2엔진 교차 투표를 생략합니다 (pip install -U pymupdf)")
@@ -372,9 +397,24 @@ def main():
         print(f"상세: {e}")
         return
 
-    positional = [a for a in sys.argv[1:] if not a.startswith("--")]
+    args = sys.argv[1:]
+    strategy = "lines"
+    positional = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--strategy" and i + 1 < len(args):
+            strategy = args[i + 1]
+            i += 2
+            continue
+        if not args[i].startswith("--"):
+            positional.append(args[i])
+        i += 1
+    if strategy not in ("lines", "text"):
+        print(f"오류: 지원하지 않는 전략입니다: {strategy} (lines | text)")
+        return
+
     if positional:
-        process_file(positional[0])
+        process_file(positional[0], strategy)
         return
 
     supported_files = sorted(
@@ -386,14 +426,14 @@ def main():
         print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
         return
     if len(supported_files) == 1:
-        process_file(supported_files[0])
+        process_file(supported_files[0], strategy)
         return
     print(f"PDF 파일 {len(supported_files)}개 발견:")
     for i, f in enumerate(supported_files, 1):
         print(f"  {i}. {f}")
     print()
     for f in supported_files:
-        process_file(f)
+        process_file(f, strategy)
         print()
 
 

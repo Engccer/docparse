@@ -182,10 +182,15 @@ def recommend_parsers(fmt, tier, has_text_layer, table_hint, lang="ko"):
         # HWP(구형 바이너리)는 hwpx_local이 직접 못 읽는다. hwpx-automation의
         # hwp2hwpx로 HWPX 변환 후 hwpx_local 권장. 변환 없이 직접 처리는 Upstage.
         parsers = ["upstage"]
-    elif fmt in ("docx", "pptx"):
+    elif fmt == "docx":
+        # 로컬·무료 파서 우선. 거부(텍스트박스·각주·중첩 표·recall 불일치) 시
+        # Upstage·LlamaParse로 승격(SKILL.md Office 로컬 티어 참조).
+        parsers = ["docx_local", "upstage", "llamaparse"]
+    elif fmt == "pptx":
         parsers = ["upstage", "llamaparse"]
     elif fmt == "xlsx":
-        parsers = ["upstage", "llamaparse"]
+        # 로컬·무료 파서 우선. 원시 XML 교차 검증 불일치·차트 텍스트 중요 시 승격.
+        parsers = ["xlsx_local", "upstage", "llamaparse"]
     elif fmt == "image":
         parsers = ["upstage", "gemini"]
     else:

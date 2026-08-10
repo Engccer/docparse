@@ -23,6 +23,10 @@ LOCAL = [
      "note": "HWPX 전용·오프라인"},
     {"name": "pdfplumber", "module": "pdfplumber", "pip": "pdfplumber",
      "note": "괘선 표 PDF Tier 0·오프라인. 2엔진 교차 투표는 pymupdf 병용(미설치 시 생략)"},
+    {"name": "xlsx_local", "module": "openpyxl", "pip": "openpyxl",
+     "note": "XLSX 전용·오프라인. 원시 XML 값 교차 검증 내장"},
+    {"name": "docx_local", "module": "docx", "pip": "python-docx",
+     "note": "DOCX 전용·오프라인. document.xml 전수 recall 검증 내장"},
     {"name": "opendataloader", "module": "opendataloader_pdf", "pip": "opendataloader-pdf",
      "note": "PDF 전용, 별도로 Java 런타임 필요"},
 ]

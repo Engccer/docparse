@@ -2,6 +2,18 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
+## [3.21] - 2026-08-11
+
+### 추가
+- **Office 로컬 결정론 파서 2종 신설**: `parsers/xlsx_local_parse.py`(openpyxl)·`parsers/docx_local_parse.py`(python-docx). XLSX·DOCX는 셀 값·병합 범위·헤딩 스타일이 XML에 명시된 포맷이라 Tier 0 철학(원본이 명시적이면 LLM 추론은 하방 위험)을 그대로 확장한다. `assess_document.py`가 두 포맷에서 로컬 파서를 추천 선두에 배치(구: Upstage·LlamaParse만).
+  - xlsx_local: 병합은 범위 명시 기록(거부 아님), 숨김 행·열 데이터 보존·고지, 미계산 수식은 원문 보존. 검증 게이트는 openpyxl 추출값 전체 vs 원시 XML 자체 해석(zipfile+ElementTree 독립 파스)의 시트 단위 값 멀티셋 대조 — 불일치 시 출력 미작성.
+  - docx_local: 본문 블록(헤딩·단락·표) 문서 순서 보존, document.xml 전수 recall 토큰 대조("가장 가까운 조상 w:p" 집계로 run 분절 안전). 텍스트박스·필드 텍스트는 누락으로 반드시 드러나 거부, 각주·미주 텍스트·중첩 표도 거부(조용한 유실 차단).
+  - 실측(2026-08-11): 실제 법률안 DOCX 토큰 1,063건 완전 일치 PASS, 병합 263범위 동아리 명부 XLSX PASS(수식 캐시·숨김 열 고지 포함), 각주 있는 3,611토큰 보고서 정직 거부, 서드파티 텍스트박스 픽스처 누락 토큰 명시 거부. 합성 파일 테스트 21종 GREEN.
+  - 구현 함정 기록: python-docx 병합 감지에서 lxml 프록시 `id()`만 저장하면 GC 후 id 재사용으로 정상 셀을 병합 오인(실측 재현) — 참조 보관으로 해결(tier-rules 기록).
+- **`pdfplumber_parse.py --strategy text` (opt-in)**: 괘선 없는 정렬 표를 pdfplumber·PyMuPDF 양쪽 text 전략 교차 투표 + 단어↔셀 대조로 지원. 산문 오인은 추정 열 경계가 단어를 관통해 쪼개므로 단어↔셀 대조가 거부함을 실측(두 엔진이 같은 43x14 쓰레기 표에 수렴했으나 거부). 렌더링 시 데이터 없는 빈 간격 행 제거(lines 전략의 빈 행은 양식 정보라 보존). PASS 의미의 경계(열 구획 정보 부재)와 text 전략 교차 투표의 독립성 한계를 tier-rules에 명시.
+- `requirements.txt`·`scripts/check_env.py`에 openpyxl·python-docx(>=1.1.0 핀) 추가(무료·로컬 군). SKILL.md 티어 표·파서 표·비교표·README·tier-rules에 xlsx·docx 티어와 `xlsxlocal`·`docxlocal` fused 토큰 반영.
+- 별도 컨텍스트 코드 리뷰 보강(BLOCKING 2건 포함 9건): ①머리글·바닥글이 document.xml recall 사각지대에서 무경고 유실된 채 PASS로 위장하던 구멍을 파트별 추출(표·첫/짝수 페이지 변형 포함)+파트별 recall 검증으로 봉합 ②raw 집계가 w:tab·w:br를 구분자 없이 이어붙여 소프트 줄바꿈·탭이 있는 흔한 문서를 전부 오거부하던 결함을 공백 합류로 해소 ③그룹 숨김 열(min~max) 고지 전개 ④차트시트 등 openpyxl 로드 실패의 우아한 거부 ⑤`t="d"`(ISO 날짜 셀) 크래시 방지 ⑥미계산 수식 원문은 값 검증 대상이 아님을 한계로 명시 ⑦text 전략 표 미검출 메시지 분리 ⑧python-docx 하한 핀 ⑨죽은 코드 제거. 재검증(9건 전부 CONFIRMED) 후속 4건 추가 반영: w:noBreakHyphen(하이픈)·w:ptab(공백)·단락 중간 페이지/단 나눔(w:br type=page/column은 빈 문자열) 대칭 번역으로 오거부 3종 해소, w:sym(심볼 글리프)은 양쪽 관점이 모두 못 읽어 recall로도 안 잡히는 대칭 침묵 유실이라 존재 감지 시 거부로 전환. 최종 회귀 테스트 46종 전체 GREEN, 실문서 재실측 결과 불변.
+
 ## [3.20] - 2026-08-10
 
 ### 추가
