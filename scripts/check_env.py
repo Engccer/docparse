@@ -21,6 +21,8 @@ except Exception:
 LOCAL = [
     {"name": "hwpx_local", "module": "hwpx_tomd", "pip": "hwpx-tomd",
      "note": "HWPX 전용·오프라인"},
+    {"name": "pdfplumber", "module": "pdfplumber", "pip": "pdfplumber",
+     "note": "괘선 표 PDF Tier 0·오프라인"},
     {"name": "opendataloader", "module": "opendataloader_pdf", "pip": "opendataloader-pdf",
      "note": "PDF 전용, 별도로 Java 런타임 필요"},
 ]

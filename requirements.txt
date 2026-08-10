@@ -12,6 +12,9 @@
 # (엔진 소스를 직접 수정할 때만 editable 설치: pip install -e path/to/hwpx-tomd)
 hwpx-tomd>=0.2.0,<1.0.0
 
+# 괘선 표 PDF Tier 0 파서(pdfplumber_parse.py). 격자 추출 + 좌표 재배치 자가검증.
+pdfplumber
+
 # PDF 로컬 파서(opendataloader_parse.py). 별도로 Java 런타임이 필요하다.
 opendataloader-pdf
 
