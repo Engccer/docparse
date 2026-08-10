@@ -16,6 +16,13 @@ PDF에 대한 서로 독립적인 두 관점이다. 단어 중심 좌표를 셀 
 셀(None 셀)도 span 정보가 평탄화되므로 감지 즉시 경고 대상이다. 경고가 하나라도
 있으면 출력 파일을 만들지 않는다 — 기존 티어(LlamaParse v2·Upstage 등)로 승격할 것.
 
+독립 2엔진 교차 투표(2026-08-10 추가): 위 두 관점은 모두 pdfplumber 내부라,
+열 경계 오인처럼 격자·좌표가 같은 상류 결함을 공유하는 오류는 잡지 못한다.
+코드를 전혀 공유하지 않는 PyMuPDF find_tables()로 같은 표를 다시 추출해 표
+개수·구조(행x열)·셀 내용을 대조한다(crosscheck_with_fitz). 두 독립 구현이
+같은 결과에 도달해야만 PASS다. PyMuPDF 미설치 환경에서는 교차 투표를
+생략하고 그 사실을 명시한다(단일 엔진 검증만으로 동작은 유지).
+
 한계: 스캔본(텍스트 레이어 없음)은 출력 0(OCR 기능 없음), 괘선 없는 표는
 정렬 추정이라 신뢰도 급락, 병합·rowspan 셀은 격자 모델이 깨짐, 다단 산문·헤딩
 위계는 범위 밖. 해당 문서는 기존 티어 파이프라인을 그대로 쓴다.
@@ -122,6 +129,108 @@ def verify_page(grids, assignments):
     return checked, problems
 
 
+def _bbox_overlap_ratio(a, b):
+    """두 bbox의 교집합 넓이 / 작은 쪽 넓이 (0.0~1.0). 표 짝짓기용."""
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    smaller = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+    return (ix * iy) / smaller if smaller > 0 else 0.0
+
+
+def _fitz_page_tables(filename):
+    """PyMuPDF find_tables로 페이지별 [(bbox, grid)] 추출. 미가용이면 None.
+
+    fitz.table 첫 사용 시 pymupdf_layout 권유 안내문이 stdout으로 나오므로,
+    파서 출력 오염을 막기 위해 fitz 구간만 캡처한다.
+    """
+    try:
+        import fitz
+    except ImportError:
+        return None
+    if not hasattr(getattr(fitz, "Page", None), "find_tables"):
+        return None
+    import contextlib
+    import io
+
+    pages = []
+    with contextlib.redirect_stdout(io.StringIO()):
+        with fitz.open(filename) as doc:
+            for page in doc:
+                # CropBox != MediaBox면 fitz는 cropbox 원점 기준, pdfplumber는
+                # mediabox 기준 좌표를 내므로 mediabox 기준으로 평행이동한다.
+                dx = page.cropbox.x0 - page.mediabox.x0
+                dy = page.mediabox.y1 - page.cropbox.y1
+                pages.append([
+                    ((t.bbox[0] + dx, t.bbox[1] + dy, t.bbox[2] + dx, t.bbox[3] + dy),
+                     t.extract())
+                    for t in page.find_tables().tables
+                ])
+    return pages
+
+
+def crosscheck_with_fitz(filename, pages_tables):
+    """pdfplumber 격자를 독립 엔진(PyMuPDF find_tables)과 셀 단위 교차 투표.
+
+    verify_page(격자↔좌표)는 pdfplumber 내부의 두 관점이라, 두 관점이 같은
+    상류 결함(열 경계 오인 등)을 공유하면 통과해 버린다. 구현을 전혀 공유하지
+    않는 두 번째 엔진이 같은 구조·내용에 도달하는지 대조해 그 계층을 막는다.
+
+    pages_tables: 페이지별 [(bbox, grid), ...] (pdfplumber 추출 결과)
+    반환: (대조 셀 수, 문제 목록[str]) 또는 None(PyMuPDF 미가용)
+    """
+    try:
+        fitz_pages = _fitz_page_tables(filename)
+    except Exception as e:
+        # fitz가 문서 열기·표 추출에서 죽으면 그 자체를 불일치로 간주(fail-closed)
+        return 0, [f"PyMuPDF 실행 오류(교차 투표 실패로 간주): {e}"]
+    if fitz_pages is None:
+        return None
+
+    checked = 0
+    problems = []
+    if len(pages_tables) != len(fitz_pages):
+        # zip이 짧은 쪽에서 멈춰 초과 페이지의 표가 검증을 탈출하는 것을 막는다
+        problems.append(
+            f"페이지 수 불일치: pdfplumber {len(pages_tables)}p / fitz {len(fitz_pages)}p"
+        )
+    for page_no, (p_tables, f_tables) in enumerate(zip(pages_tables, fitz_pages), start=1):
+        if len(p_tables) != len(f_tables):
+            problems.append(
+                f"p{page_no}: 표 개수 불일치 pdfplumber {len(p_tables)}개 / fitz {len(f_tables)}개"
+            )
+        remaining = list(f_tables)
+        for ti, (bbox, grid) in enumerate(p_tables):
+            match_idx = None
+            for j, (f_bbox, _) in enumerate(remaining):
+                if _bbox_overlap_ratio(bbox, f_bbox) >= 0.5:
+                    match_idx = j
+                    break
+            if match_idx is None:
+                problems.append(f"p{page_no} 표{ti + 1}: fitz에서 대응하는 표를 찾지 못함")
+                continue
+            _, f_grid = remaining.pop(match_idx)
+            p_rows = len(grid)
+            p_cols = max((len(r) for r in grid), default=0)
+            f_rows = len(f_grid)
+            f_cols = max((len(r) for r in f_grid), default=0)
+            if (p_rows, p_cols) != (f_rows, f_cols):
+                problems.append(
+                    f"p{page_no} 표{ti + 1}: 구조 불일치 pdfplumber {p_rows}x{p_cols} / fitz {f_rows}x{f_cols}"
+                )
+                continue
+            for r in range(p_rows):
+                for c in range(p_cols):
+                    checked += 1
+                    a = sorted(((grid[r][c] if c < len(grid[r]) else "") or "").split())
+                    b = sorted(((f_grid[r][c] if c < len(f_grid[r]) else "") or "").split())
+                    if a != b:
+                        problems.append(
+                            f"p{page_no} 표{ti + 1} ({r},{c}): "
+                            f"pdfplumber='{' '.join(a)}' / fitz='{' '.join(b)}'"
+                        )
+    return checked, problems
+
+
 def _page_body(page, tables, grids):
     """페이지 본문 구성: 표 밖 텍스트 라인과 표를 상단 좌표순으로 배치.
 
@@ -175,6 +284,7 @@ def process_file(filename):
     merged_cells = 0
     all_problems = []
     all_unassigned = []
+    pages_tables = []  # 교차 투표용: 페이지별 [(bbox, grid), ...]
 
     with pdfplumber.open(filename) as pdf:
         page_count = len(pdf.pages)
@@ -192,6 +302,7 @@ def process_file(filename):
                     total_cells += len(row)
                     total_nonempty += sum(1 for v in row if v and v.strip())
             total_tables += len(tables)
+            pages_tables.append([(t.bbox, g) for t, g in zip(tables, grids)])
 
             body = _page_body(page, tables, grids)
             if page_count > 1:
@@ -212,8 +323,20 @@ def process_file(filename):
     print(f"페이지 {page_count} · 표 {total_tables}개 · 셀 {total_cells}개(내용 있는 셀 {total_nonempty})")
     print(f"자가검증(격자 추출 ↔ 좌표 재배치 양방향 대조): 셀 {total_checked}건")
 
-    if all_problems or all_unassigned or merged_cells:
-        print(f"경고: 셀 불일치 {len(all_problems)}건 · 미배정 단어 {len(all_unassigned)}건 · 병합 의심 셀 {merged_cells}건")
+    cross = crosscheck_with_fitz(filename, pages_tables)
+    if cross is None:
+        cross_problems = []
+        print("[알림] PyMuPDF(fitz) 미가용: 독립 2엔진 교차 투표를 생략합니다 (pip install -U pymupdf)")
+    else:
+        cross_checked, cross_problems = cross
+        print(f"교차 투표(pdfplumber / PyMuPDF find_tables 독립 2엔진): 셀 {cross_checked}건 대조")
+
+    if all_problems or all_unassigned or merged_cells or cross_problems:
+        cross_part = "교차 투표 생략" if cross is None else f"교차 엔진 불일치 {len(cross_problems)}건"
+        print(
+            f"경고: 셀 불일치 {len(all_problems)}건 · 미배정 단어 {len(all_unassigned)}건"
+            f" · 병합 의심 셀 {merged_cells}건 · {cross_part}"
+        )
         for page_no, ti, r, c, a, b in all_problems[:MAX_PROBLEM_SAMPLES]:
             print(f"  - p{page_no} 표{ti + 1} ({r},{c}): 격자='{a}' / 좌표='{b}'")
         if len(all_problems) > MAX_PROBLEM_SAMPLES:
@@ -223,6 +346,10 @@ def process_file(filename):
             print(f"  - 미배정(병합 셀·경계 걸침 의심): {samples}")
         if merged_cells:
             print("  - 병합 셀은 마크다운 표에서 span 정보가 소실됩니다")
+        for line in cross_problems[:MAX_PROBLEM_SAMPLES]:
+            print(f"  - [교차] {line}")
+        if len(cross_problems) > MAX_PROBLEM_SAMPLES:
+            print(f"  ... 외 [교차] {len(cross_problems) - MAX_PROBLEM_SAMPLES}건")
         print("→ 자가검증 실패: 출력 파일을 만들지 않았습니다. 기존 티어(LlamaParse v2·Upstage)로 승격하세요.")
         return
 
@@ -230,7 +357,10 @@ def process_file(filename):
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("\n\n".join(s for s in sections if s) + "\n")
     print(f"출력 파일: {output_file}")
-    print("=== PASS: 열 배정까지 완전 일치 ===")
+    if cross is None:
+        print("=== PASS: 열 배정까지 완전 일치 (교차 투표 생략) ===")
+    else:
+        print("=== PASS: 열 배정과 독립 2엔진 교차 투표까지 완전 일치 ===")
 
 
 def main():

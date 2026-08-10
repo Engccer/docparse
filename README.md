@@ -16,7 +16,7 @@
 | 파서 | 스크립트 | 출력 | 필요 키 | 역할 |
 |--------|--------|--------|--------------|------|
 | **hwpx_local** | `parsers/hwpx_local_parse.py` | `_hwpxlocal.md` | 없음 (로컬, 무료) | HWPX 전용, 오프라인. 글상자·`<hp:t>` tail·병합 표 셀을 보존하고 자가검증 3종 수행. `hwpx-tomd` 패키지 필요. 이미지 내 텍스트는 범위 밖. |
-| **pdfplumber** | `parsers/pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬, 무료) | 괘선 표 PDF 전용(Tier 0), 오프라인, 비-LLM. 격자 추출과 좌표 재배치를 셀 단위로 양방향 대조하는 자가검증 내장(열 배정 오류 검출), 빈 셀 보존. 스캔·병합 셀·산문은 범위 밖. |
+| **pdfplumber** | `parsers/pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬, 무료) | 괘선 표 PDF 전용(Tier 0), 오프라인, 비-LLM. 격자 추출과 좌표 재배치를 셀 단위로 양방향 대조하는 자가검증 + PyMuPDF find_tables 독립 2엔진 교차 투표 내장(열 배정 오류·공유 상류 결함 검출), 빈 셀 보존. 스캔·병합 셀·산문은 범위 밖. |
 | **upstage** | `parsers/upstage_parse.py` | `_upstage.md` | `UPSTAGE_API_KEY` | 베이스라인. 노이즈 필터링·완전성 최강, 메타데이터 우수. |
 | **gemini** | `parsers/gemini_parse.py` | `_gemini.md` | `GEMINI_API_KEY` | 텍스트 품질·헤딩 최상. 짧은 PDF(30페이지 이하)에서 신뢰. |
 | **llamaparse (LlamaParse v2)** | `parsers/llamaparse_parse.py` | `_llamaparse.md` | `LLAMAPARSE_API_KEY` | medium 이상 PDF의 기본 Primary(agentic 티어). 표 열 정확도·OCR 강함. |
