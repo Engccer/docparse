@@ -10,7 +10,7 @@
 # 엔진(hwpx-tomd)·소비자를 같은 작성자가 관리하므로 breaking 시 함께 대응한다.
 # 1.0.0(stable) 도달 시 >=1.0.0,<2.0.0 등으로 다시 조인다.
 # (엔진 소스를 직접 수정할 때만 editable 설치: pip install -e path/to/hwpx-tomd)
-hwpx-tomd>=0.2.0,<1.0.0
+hwpx-tomd>=0.2.1,<1.0.0
 
 # 괘선 표 PDF Tier 0 파서(pdfplumber_parse.py). 격자 추출 + 좌표 재배치 자가검증 + PyMuPDF 독립 2엔진 교차 투표.
 pdfplumber
