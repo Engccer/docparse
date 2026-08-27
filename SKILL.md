@@ -7,7 +7,7 @@ description: >
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
 metadata:
-  version: "1.3.0"
+  version: "1.4.0"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
@@ -55,6 +55,8 @@ metadata:
 | `generate_alt_text.py` | 시각장애인 접근성 alt text 자동 생성 (PyMuPDF + Gemini Vision, 한국어 상세화) |
 | `diff_fidelity.py` | 손글씨 파이프라인 ③단계: LLM 파서 ↔ OCR(gvision) 토큰 정렬로 **발산 토큰**(환각/교정/오독 후보) + OCR 저신뢰 단어를 합쳐 페이지별 "육안 검증 표적" 생성 (전수 → 표적) |
 | `extract_vision_drafts.py` | 캐스케이드 ②단계: `_gvision.md`에서 페이지별 영어 드래프트(라틴 포함·한글 미포함 라인)+저신뢰 목록을 `draft_pNN.txt`로 추출. Claude repair 입력 |
+| `hwpx_enrich.py` | HWPX 결정론 보강: hwpx-tomd 출력에 **개요 스타일→`#` 제목**, **취소선 `~~`·강조색 `<mark>`**(charPr), **인쇄 PDF 실제 쪽 `<!-- p.N -->`**(pdftotext 쪽 텍스트와 전역 LIS 정렬), 간지·머리말 잔재 삭제를 문단 단위 정확 일치로만 입힌다(2026-08-28, 554쪽 HWP 보고서에서 제목 301·서식 런 729·쪽 주석 134 실측) |
+| `apply_corrections.py` | **정본 수정 목록 CSV** 적용기: 오탈자·개인정보·표기 정규화를 손으로 고치지 않고 CSV(문서·원본 쪽·원문·수정문·유형·처리·근거)로 적용·검증(원문 0회면 오류, 치환 후 잔존 검사, 원본 쪽 자동 채움). 정본을 재생성해도 같은 CSV로 같은 결과 |
 | `score_transcription.py` | 손글씨/OCR 전사 **정량 채점**: 정본 대비 후보들의 CER·WER를 항목별·micro/macro 집계(편집 주석 대칭 제거·백지 집계 제외). 모델·방법 calibration용 (2026-06-23 토너먼트에서 정립) |
 
 ### 참조 (`references/`)
@@ -94,6 +96,10 @@ python "<스킬루트>/scripts/check_env.py"
 
 파서별 의존 패키지·API 키 준비 상태와 키 발급 URL을 한 번에 출력한다(읽기 전용, 아무것도 설치하지 않음). 처음 클론한 환경이거나 특정 파서가 키·패키지 누락으로 실패하면 먼저 실행해 무엇을 설치·설정할지 확인한다. 무료 로컬 파서(hwpx_local·pdfplumber·xlsx_local·docx_local·opendataloader)는 키 없이 바로 쓸 수 있다. 매 작업마다 필요한 절차는 아니므로, 환경이 준비된 뒤에는 건너뛴다.
 
+### Step 0.5: 편집 원본 탐색 (PDF를 파싱하기 전에 반드시)
+
+인쇄용·배포용 PDF를 받았으면 **같은 문서의 편집 원본(HWP·HWPX·DOCX·XLSX)이 옆 폴더·공유 드라이브·발주처에 있는지 먼저 찾는다.** 있으면 그 파일을 결정론 티어(hwpx·docx·xlsx)로 보내고 PDF는 쪽 번호·대조용으로만 쓴다. 편집 원본은 병합셀·표 경계·서식(취소선·글자색)·제목 수준이 XML에 명시돼 있어 LLM 파서의 3대 오류(병합셀 날조·열 밀림·쪽 경계 잘림)가 구조적으로 사라진다. 사례(2026-08-28): 554쪽 연구보고서를 PDF로 LLM 3자 파싱해 병합셀 1:1 날조·표 열 소실이 검수에서 30건 넘게 잡혔는데, HWP 원본이 발주처 공유 폴더에 처음부터 있었다. 원본 보유 여부를 묻는 데 드는 비용은 회신 한 통이다.
+
 ### Step 1: 사전 진단
 
 ```bash
@@ -120,6 +126,8 @@ JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 
 **Tier 0 (결정론 우선 게이트, 2026-08-10)**: `table_hint: true`(벡터 괘선 격자) + `has_text_layer: true`이고 **목표 산출물이 산문이 아니라 표 데이터**(시간표·명렬표·집계표·주간학습안내 등 행정 문서)면, 페이지 수 티어보다 먼저 `pdfplumber_parse.py`(로컬·무료·비-LLM)를 시도한다. 원본이 명시적일 때(그려진 격자 + 임베딩된 글자) LLM 추론은 순수한 하방 위험이기 때문이다. 격자 모델(extract_tables)과 좌표 모델(extract_words)의 셀 단위 양방향 대조 자가검증이 내장돼 열 배정 오류까지 기계로 잡히고, 구현을 공유하지 않는 PyMuPDF find_tables 독립 2엔진 교차 투표가 한 겹 더해져 격자·좌표가 같은 상류 결함을 공유하는 오류까지 막는다(육안 대조 없이 검증이 닫힘). **PASS면 그대로 채택(`_fused_v3_pdfplumber.md`)하고 Step 5~7의 LLM 교차 검증은 생략 가능**, 경고(셀 불일치·미배정 단어·병합 의심 셀·교차 엔진 불일치·표 미검출)가 하나라도 뜨면 파서가 출력 파일을 만들지 않으므로 기본 티어 표로 승격한다. 적용 경계·상세는 `references/tier-rules.md`의 "괘선 정형 표 PDF" 절. 괘선 없는 정렬 표는 opt-in `--strategy text`로 시도할 수 있다(2026-08-11): 두 엔진 text 전략 교차 투표 + 단어↔셀 대조가 게이트이며, 괘선이 없으면 열 구획 정보가 문서에 없으므로 PASS의 의미는 "단어 보존 + 2엔진 구조 수렴"까지다(상세는 tier-rules).
 
 **HWPX 티어**: `assess_document.py`가 `format: "hwpx"`로 진단 시 **로컬·무료 파서 `hwpx_local_parse.py`(hwpx-tomd 엔진)를 먼저** 쓴다. 글상자(drawText) reading-order 수집, `<hp:t>` tail 보존(객관식 선택지 ②③⑤ 누락 방지), 표 cellAddr/cellSpan 그리드 배치(세로·가로 병합 보존)가 검증됐다. 실문서 33종에서 원본 `<hp:t>` 대비 글자 멀티셋 손실 0·객관식 마커 손실 0(문자·마커 단위 완벽 보존)이고, 변환 후 자가검증 3종(단어 recall + 글자 멀티셋 recall + 객관식 마커 보존 가드)이 조용한 누락을 막는다(2026-06-06).
+
+**HWPX 결정론 보강(`scripts/hwpx_enrich.py`, 2026-08-28)**: hwpx-tomd는 본문·표를 정확히 옮기지만 제목 수준·취소선·글자색·쪽 번호를 버린다. 보고서류(개요 스타일로 제목을 잡은 문서, 서식이 의미를 갖는 조사지, 검수자가 원본 쪽수로 대조하는 문서)는 변환 직후 `hwpx_enrich.py --hwpx <원본> --md <_hwpxlocal.md> --pdf <인쇄 PDF> --heading "개요 2:2,개요 3:3,…" --mark-color 0000FF`로 보강한다. 제목은 `header.xml`의 style 이름(「개요 1~10」, 부 제목은 머리말 스타일)→레벨 매핑, 서식은 `charPr`의 `strikeout`·`textColor`, 쪽 번호는 PDF 쪽 텍스트(pdftotext)와의 전역 단조 정렬(LIS)로 잡는다(kordoc 등의 추정 페이지네이션은 인쇄본과 어긋나므로 쓰지 않는다). 원본과 달라지는 수정(오탈자·개인정보)은 `apply_corrections.py`로 CSV 경유만. **kordoc·pyhwp는 보조·대조용**: kordoc JSON은 표별 rowSpan/colSpan 명세와 장 제목이 유용하지만 쪽 번호는 자체 추정이고, pyhwp `hwp5proc xml`·한컴 COM 변환본은 **취소선(`line_through`/strikeout)을 표지 제목까지 켜진 것으로 읽어 신뢰할 수 없다**(2023 보고서 실측: hwp2hwpx HWPX의 charPr 취소선 10런이 인쇄본과 정확히 일치, COM 21,680런·pyhwp 43,616런은 오판). 표 병합은 `hwpx-tomd --merge-fill`로 세로·가로 병합값을 덮인 칸에 반복 기입한다(빈 칸이 「병합」인지 「원래 빈 셀」인지 독자와 RAG가 구분할 수 없기 때문. 병합셀 하나에 항목 여러 개가 들어 있으면 셀째로 반복되므로 1:1 대응 날조가 생기지 않는다).
 
 **Upstage로 교차/대체하는 경우**: (1) **이미지 안의 텍스트**(제목·도표·캡션 등)가 중요한 문서. hwpx_local은 이미지 텍스트를 추출하지 못하고 본문에 이미지가 있으면 경고한다(OCR은 Upstage 영역). (2) **시각적 배치 재현**이 중요한 문서(고사 원안 레이아웃 등). 글상자는 anchor 기반 reading-order 근사이고 중첩표는 텍스트로 평탄화된다. (3) hwpx_local의 **recall·마커 경고**가 뜨는 문서. 이 경우 `upstage_parse.py`를 함께 돌려 대조한다.
 
@@ -253,7 +261,7 @@ python <스킬루트>/scripts/compare_outputs.py "<primary.md>" "<upstage.md>"
 
 ### Step 7: 최종 노이즈 정리
 
-최종 fused 파일(`_fused_v3_<파서조합>.md`) 최종 점검. OCR 아티팩트(`一`, `□`), 페이지 경계 고아 줄, 중복 heading, 환각 텍스트, 이미지 placeholder 잔재, Upstage OCR 단어 분절, HTML 체크박스 아티팩트, 반복 페이지 푸터 등. 상세 체크리스트는 `references/postprocess.md` Step 7 절.
+최종 fused 파일(`_fused_v3_<파서조합>.md`) 최종 점검. **원본 오탈자를 임의로 고치지 않는다**: LLM 파서가 조용히 교정해 놓은 표기(「스레기통→쓰레기통」「구측→구축」)는 3자 대조로 원문으로 되돌리고, 교정이 필요하면 `apply_corrections.py`의 수정 목록 CSV를 거친다(어디는 고치고 어디는 두는 비일관이 검수에서 가장 많이 지적된 항목, 2026-08-24). OCR 아티팩트(`一`, `□`), 페이지 경계 고아 줄, 중복 heading, 환각 텍스트, 이미지 placeholder 잔재, Upstage OCR 단어 분절, HTML 체크박스 아티팩트, 반복 페이지 푸터 등. 상세 체크리스트는 `references/postprocess.md` Step 7 절.
 
 ### Step 8: 출력 및 정리
 

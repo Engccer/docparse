@@ -111,6 +111,16 @@ python "<스킬루트>/parsers/llamaparse_parse.py" --credits
 
 실측: 한 학술 보고서(554p, 텍스트 레이어 있음)에서 ODL 본문 숫자 전체 누락(2026-05-14). v2와 Upstage는 정상.
 
+## 인쇄용 책자 PDF의 여러 쪽에 걸친 표·병합셀 (2026-08-28 신설)
+
+인쇄용 PDF만 있는 보고서·안내서는 큰 표가 쪽마다 잘려 실리고, 세로 병합셀(책무·지원 분야 등 첫 열)은 첫 쪽에만 값이 보인다. LLM 파서는 이를 쪽마다 별개의 표로 내고 병합값을 잃거나, 통짜 병합셀을 아래 행들과 **1:1로 쪼개 원본에 없는 대응 관계를 만든다**(2023 보고서 검수에서 최우선 수정으로 지목된 유형). 편집 원본이 없을 때(Step 0.5 확인 후) 다음 절차를 적용한다.
+
+1. **연속 표 검출**: 표 직후에 쪽 경계(`<page_number>` 등)가 오고 다음 쪽이 같은 열 수의 표로 시작하면 「연속 표 후보」로 표시한다.
+2. **잇기**: 같은 열 수 + 머리글 행 반복이면 하나의 표로 병합하고 반복 머리글을 지운다. 세로 병합값은 **빈 셀에 직전 값을 반복 기입**한다(평탄화하되 정보는 유지).
+3. **1:1 대응 금지**: 한 셀에 항목 여러 개가 있으면 행을 쪼개지 않고 셀 안에 목록으로 둔다. 항목 수가 다른 두 열(현황 11개 : 방안 12개)을 행으로 맞추지 않는다.
+4. **셀 위치 대조(Step 5.3)는 이 구간의 모든 표에 필수**: 3파서 다수결(Gemini 제외), 불일치가 남으면 해당 쪽을 시각 판독해 확정한다(시각 판독 표적 목록을 자동 생성). 괘선 격자가 있으면 pdfplumber 그리드·좌표 덤프를 대조 자료로 보존한다(병합 경고로 출력이 거부돼도 텍스트 자체는 신뢰 가능).
+5. **쪽 경계 문장**: 음절 단위로 잘린 조각(「생활통지표」의 「생」이 잘려 「활동지표」로 오독)은 잇기 전후 diff에서 잡히므로 연속 표 구간은 본문 조각도 함께 대조한다.
+
 ## 학술/연구 보고서 (정형 텍스트 + 표 풍부)
 
 인쇄용 책자(인포그래픽 풍부)와 달리, 학술 보고서는 v2가 시각 디자인 크기에 끌려 **같은 깊이의 절에 무작위로 H1/H2/H3 부여**하는 경향. 예시: `## 1. 연구의 필요성 및 목적` 뒤에 `# 2. 연구 내용 및 범위`, `# 3. 연구 운영 체계`.
@@ -245,8 +255,10 @@ Claude Code의 `Read` 도구는 ≤20p PDF를 시각 이미지로 렌더링해 �
 1. HWP → `hwpx-automation/convert/hwp2hwpx.bat <입력.hwp>`(Windows) 또는 `hwp2hwpx.sh`(macOS/Linux)로 HWPX 변환 (Java, 서식 보존).
 2. HWPX → `parsers/hwpx_local_parse.py <파일.hwpx>`로 마크다운 변환(출력 `_hwpxlocal.md`). 긴 지문이 셀 안에 있으면 `--cell-br`.
 3. 이미지 경고·recall/마커 경고가 뜨거나 시각적 배치 재현이 중요하면 Upstage 추가 실행하여 비교.
-4. kordoc(`npx kordoc`)는 HWP 바이너리 파싱 가능하나 표 중심 HWPX 문서에서 파싱 실패 사례 확인됨(2026-03). 교차검증 도구로 비권장.
-5. HWPX 편집(`--set-cell`/`--find` 등)은 docparse가 아니라 `hwpx-automation` 스킬의 `hwpx_edit.py`를 쓴다(docparse는 읽기 전용).
+4. 보고서류는 변환 직후 `scripts/hwpx_enrich.py`로 제목(개요 스타일)·취소선·글자색·인쇄 PDF 쪽 번호를 보강한다(SKILL.md HWPX 티어 절). 취소선·글자색의 정본은 **hwp2hwpx HWPX의 `charPr`**이며 pyhwp XML·한컴 COM 변환본의 strikeout은 오판이 확인돼 쓰지 않는다(2026-08-28).
+5. kordoc(`npx --yes --package kordoc --package pdfjs-dist kordoc <hwp> --format json`)은 HWP를 직접 읽어 표별 rowSpan/colSpan 명세·장 제목·글꼴 크기를 JSON으로 주므로 **보조 메타·대조용**으로 유용하다(2026-08-28 554쪽 보고서에서 본문 글자 hwpx_local과 동일, 누락 1자). 단 쪽 번호는 자체 추정(495쪽 vs 인쇄 554쪽)이라 인쇄본 쪽수로 쓰지 않는다. 2026-03의 표 중심 문서 파싱 실패 사례가 있어 Primary로는 여전히 비권장.
+6. hwp2hwpx가 예외로 죽는 HWP(`extendControl IndexOutOfBounds`=컨트롤 문자 수 불일치, `EmptyStackException`=필드 짝 불일치)는 hwpx-automation의 패치 JAR로 재시도하고, 그래도 안 되면 Windows 한컴 COM(`hwpx_com.py --from-hwp`, SSH에서는 `schtasks /IT` 경유)으로 변환한다.
+7. HWPX 편집(`--set-cell`/`--find` 등)은 docparse가 아니라 `hwpx-automation` 스킬의 `hwpx_edit.py`를 쓴다(docparse는 읽기 전용).
 
 ### 포맷별 호환성 매트릭스
 
