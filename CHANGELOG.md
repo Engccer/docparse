@@ -2,6 +2,11 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
+## 2026-08-29 (수식 시험지·pdftotext 함정)
+
+- `references/tier-rules.md`: **수식이 있는 시험지는 LlamaParse v2가 유일한 Primary**. ODL·Upstage는 HancomEQN 계열 수식 글꼴의 변수·수치를 통째로 버린다(서울대 78쪽 면접·구술고사 기출 실측). 판정 방법과 역할 분담(수식은 v2, 해설 표 행 구조는 Upstage 기준으로 대조) 명시.
+- `references/tier-rules.md`: **`has_text_layer: true` 인데 pdftotext만 한글을 못 뽑는 경우**. 한컴 PDF에서 poppler가 한글을 공백으로 떨구지만 ODL·LlamaParse·Upstage는 정상 추출한다. pdftotext 결과가 비었다고 스캔 티어로 승격하지 말 것.
+
 ## 2026-08-28 (하이브리드 경로)
 
 - `hwpx_enrich.py`: `--title-table`(제목 역할 2칸 표 승격), `--heading-regex` 상대 수준 `+N`(같은 규칙 형제 동수준·H1 비부모), 정규식이 스타일 승격보다 우선·목차 잔재(끝이 ' 숫자') 제외, 레이아웃 표 판정 `<br>` 분할, 구역 머리말 재출력 중복 H1 제거, 바닥글 앞·뒤 자리 쪽 번호 인식.
