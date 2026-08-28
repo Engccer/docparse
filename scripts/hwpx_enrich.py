@@ -254,7 +254,9 @@ def pdf_pages(pdf_path: str):
         t = subprocess.run(["pdftotext", "-f", str(p), "-l", str(p), "-layout", pdf_path, "-"], capture_output=True, text=True).stdout
         nonempty = [l.strip() for l in t.split("\n") if l.strip()]
         last = nonempty[-1] if nonempty else ""
-        printed = int(last) if re.fullmatch(r"\d{1,4}", last) else None
+        # 바닥글 문구 뒤("… 안내자료   5")나 앞("50   단위학교 …")의 번호도 인쇄 쪽 번호로 인정
+        m = re.search(r"(?:^|\s)(\d{1,4})$", last) or re.match(r"(\d{1,4})\s{2,}\S", last)
+        printed = int(m.group(1)) if m else None
         pages.append({"pdf": p, "printed": printed, "key": re.sub(r"[\W_]+", "", t)})
     return pages
 
@@ -346,7 +348,9 @@ def main():
     ap.add_argument("--report", help="JSON 보고서 경로")
     ap.add_argument("--pdf", help="인쇄 PDF(쪽 번호 정렬용, pdftotext 필요)")
     ap.add_argument("--heading", default="", help="'스타일명|ID:레벨,...' 예: '개요 2:2,개요 3:3'")
-    ap.add_argument("--heading-regex", default="", help="'정규식:레벨;;정규식:레벨' 최상위 줄에 적용")
+    ap.add_argument("--heading-regex", default="", help="'정규식:레벨;;정규식:레벨' 표 밖 줄에 적용. 레벨은 정수 또는 '+N'(직전 제목 기준 상대). "
+                    "스타일 승격보다 우선하며, 끝이 ' 숫자'인 줄(목차 잔재)은 건너뛴다")
+    ap.add_argument("--title-table", default="", help="'정규식:레벨' 칸 2개·1행 표의 첫 칸이 정규식에 맞으면 '첫칸. 둘째칸' 제목으로 승격(인쇄 책자의 제목 박스)")
     ap.add_argument("--part-title-style", default="", help="간지 제목 스타일명. 직전 H1의 꼬리와 같으면 삭제, 아니면 --part-title-level 제목")
     ap.add_argument("--part-title-level", type=int, default=2)
     ap.add_argument("--drop-style", default="", help="삭제할 스타일명|ID 목록(쉼표)")
@@ -377,11 +381,19 @@ def main():
     drop_styles = resolve(args.drop_style)
     part_styles = resolve(args.part_title_style)
     mark_colors = {c.strip().upper() for c in args.mark_color.split(",") if c.strip()}
-    heading_regex = []
+    heading_regex = []  # (regex, level:int | None, relative:int | None)
     if args.heading_regex:
         for item in args.heading_regex.split(";;"):
             rx, lvl = item.rsplit(":", 1)
-            heading_regex.append((re.compile(rx), int(lvl)))
+            lvl = lvl.strip()
+            if lvl.startswith("+"):
+                heading_regex.append((re.compile(rx), None, int(lvl[1:])))
+            else:
+                heading_regex.append((re.compile(rx), int(lvl), None))
+    title_table = None
+    if args.title_table:
+        rx, lvl = args.title_table.rsplit(":", 1)
+        title_table = (re.compile(rx), int(lvl))
     drop_rx = re.compile(args.drop_regex) if args.drop_regex else None
     drop_tbl_rx = re.compile(args.drop_table_regex) if args.drop_table_regex else None
 
@@ -418,37 +430,78 @@ def main():
             heading_level[i] = lvl
             promoted[styles.get(sid, sid)] += 1
             if lvl == 1:
+                if line == last_h1:  # 구역 머리말(header ctrl) 재출력으로 같은 H1이 두 번 나온 것
+                    del heading_level[i]
+                    drop.add(i)
+                    promoted["dropped-duplicate-h1"] += 1
+                    continue
                 last_h1 = line
+    # 제목 역할 표(칸 2개·1행, 첫 칸 번호) → 제목 승격. 인쇄 책자는 절 제목을 표로 디자인한다.
+    title_rows = {}  # line_idx(표 첫 행) -> 제목 텍스트
+    if title_table:
+        rx, lvl = title_table
+        for i, line in enumerate(lines):
+            cells = split_row(line)
+            if cells is None or len(cells) != 2 or not rx.fullmatch(cells[0].strip()):
+                continue
+            if i + 1 >= len(lines) or not lines[i + 1].startswith("| --- "):
+                continue
+            if i + 2 < len(lines) and split_row(lines[i + 2]) is not None:
+                continue  # 2행 이상이면 본문 표
+            title = norm_ws(cells[1].replace("<br>", " "))
+            if not title:
+                continue
+            title_rows[i] = f"{cells[0].strip()}. {title}"
+            heading_level[i] = lvl
+            drop.add(i + 1)
+            promoted["title-table"] += 1
     # 간지 레이아웃 표(모든 셀이 간지 제목/번호)와 글상자 텍스트 줄 삭제
     i = 0
     while i < len(lines):
         cells = split_row(lines[i])
-        if cells is None:
+        if cells is None or i in title_rows:
             i += 1
             continue
         j = i
         block_cells = []
         while j < len(lines) and split_row(lines[j]) is not None:
             if not lines[j].startswith("| --- "):
-                block_cells += split_row(lines[j])
+                for c in split_row(lines[j]):
+                    block_cells += [seg.strip() for seg in c.split("<br>")]  # 셀 안 줄바꿈 조각별 판정
             j += 1
-        nonempty = [c for c in block_cells if c.strip()]
+        nonempty = [c for c in block_cells if c]
         if nonempty and all(c in layout_texts or (drop_tbl_rx and drop_tbl_rx.search(c)) for c in nonempty):
             drop.update(range(i, j))
             promoted["dropped-layout-table"] += 1
         i = j
+    rel_source = {}
     for i, line in enumerate(lines):
-        if i in heading_level or i in drop or split_row(line) is not None or not line:
+        if i in drop or split_row(line) is not None or not line:
             continue
-        if line in drop_texts:
-            drop.add(i)
+        if i not in heading_level:
+            if line in drop_texts:
+                drop.add(i)
+                continue
+            if drop_rx and drop_rx.search(line):
+                drop.add(i)
+                continue
+        if re.search(r"\s\d{1,3}$", line):  # '가. 개요 3' 같은 목차 잔재는 정규식 승격 대상이 아님
             continue
-        if drop_rx and drop_rx.search(line):
-            drop.add(i)
-            continue
-        for rx, lvl in heading_regex:
+        for rx, lvl, rel in heading_regex:
             if rx.search(line):
-                heading_level[i] = lvl
+                if rel is not None:  # 직전 제목(문서 순서) 기준 상대 수준. 앞에 제목이 없으면 2.
+                    # H1(부 제목)은 부모로 삼지 않는다: 구역 머리말 재출력으로 본문 중간에 찍힌 H1이 있을 수 있다
+                    prev_keys = [k for k in heading_level if k < i and heading_level[k] > 1]
+                    if prev_keys:
+                        k = max(prev_keys)
+                        # 직전 제목이 같은 상대 규칙으로 승격된 것이면 형제(같은 수준)이지 자식이 아니다
+                        lvl = heading_level[k] if rel_source.get(k) == rx.pattern else heading_level[k] + rel
+                    else:
+                        lvl = 2
+                    rel_source[i] = rx.pattern
+                if i in heading_level and heading_level[i] != lvl:
+                    promoted["regex-override-style"] += 1
+                heading_level[i] = min(6, lvl)
                 promoted[f"regex:{rx.pattern}"] += 1
                 break
     report["headings"] = dict(promoted)
@@ -492,7 +545,7 @@ def main():
                 last_page_written = cur_page
             if out and out[-1] != "":
                 out.append("")
-            out.append("#" * heading_level[i] + " " + line)
+            out.append("#" * heading_level[i] + " " + title_rows.get(i, line))
             out.append("")
             continue
         out.append(line)
