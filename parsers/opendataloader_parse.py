@@ -1,4 +1,13 @@
+"""OpenDataLoader PDF 파서 (docparse, 로컬·Java 필요).
+
+  python opendataloader_parse.py "<파일.pdf>"   → <파일>_opendataloader.md
+
+실패 계약(2026-08-31): 마크다운이 생성되지 않거나 표 기호·공백을 제외한 실제
+글자가 0이면 출력 파일을 만들지 않고 종료 코드 1. 실행 시작 시 같은 이름의
+이전 출력을 지운다.
+"""
 import os
+import re
 import sys
 import shutil
 import tempfile
@@ -13,22 +22,26 @@ try:
 except Exception:
     pass
 
+# 표 기호·페이지 구분자·공백을 뺀 "실제 글자"(gotchas.md의 빈 표 뼈대 함정 대응)
+_NON_CONTENT = re.compile(r"[\s|\-:#>*`_<!\[\]()]")
+
 
 def main():
+    """반환값이 종료 코드다(0 성공 / 1 실패)."""
     try:
         import opendataloader_pdf
     except ImportError as e:
-        print(f"오류: opendataloader-pdf 패키지를 찾을 수 없습니다.")
-        print(f"설치 명령: pip install -U opendataloader-pdf")
+        print("오류: opendataloader-pdf 패키지를 찾을 수 없습니다.")
+        print("설치 명령: pip install -U opendataloader-pdf")
         print(f"상세: {e}")
-        return
+        return 1
 
     # Java 설치 확인 (opendataloader-pdf는 Java 필요)
     if not shutil.which("java"):
         print("오류: Java가 설치되어 있지 않거나 PATH에 등록되지 않았습니다.")
         print("opendataloader-pdf는 Java Runtime Environment(JRE)가 필요합니다.")
         print("설치: https://adoptium.net/ 에서 JDK/JRE를 다운로드하세요.")
-        return
+        return 1
 
     # 지원 파일 확장자 (PDF만 지원)
     SUPPORTED_EXTENSIONS = ['.pdf']
@@ -42,9 +55,16 @@ def main():
             return os.path.join(dir_path, output_name)
         return output_name
 
+    def clear_stale_output(output_file):
+        if os.path.exists(output_file):
+            os.remove(output_file)
+            print(f"기존 출력 제거: {output_file}")
+
     def process_file(input_file):
-        """단일 파일 문서 파싱"""
+        """단일 파일 문서 파싱. 출력 파일을 만들었으면 True."""
         print(f"입력 파일: {input_file}")
+        output_file = get_output_filename(input_file)
+        clear_stale_output(output_file)
 
         # 파일 크기 확인
         file_size = os.path.getsize(input_file)
@@ -74,21 +94,27 @@ def main():
             # 생성된 마크다운 파일 찾기 (input.pdf가 들어가 있으므로 제외)
             md_files = [f for f in os.listdir(temp_dir) if f.endswith('.md')]
             if not md_files:
-                print("오류: 마크다운 파일이 생성되지 않았습니다.")
-                return
+                print("오류: 마크다운 파일이 생성되지 않았습니다. 출력 파일을 만들지 않았습니다.")
+                return False
 
             # 마크다운 내용 읽기
             temp_md_path = os.path.join(temp_dir, md_files[0])
             with open(temp_md_path, "r", encoding="utf-8") as f:
                 markdown_content = f.read()
 
+        content_chars = len(_NON_CONTENT.sub("", markdown_content))
+        if content_chars == 0:
+            print("오류: 표 기호·공백을 제외한 실제 글자가 0입니다(스캔본이거나 텍스트 레이어 없음).")
+            print("→ 출력 파일을 만들지 않았습니다. OCR 파서(Upstage·LlamaParse)로 승격하세요.")
+            return False
+
         # 결과 저장
-        output_file = get_output_filename(input_file)
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(markdown_content)
 
-        print(f"변환 완료! {len(markdown_content)}글자가 저장되었습니다.")
+        print(f"변환 완료! {len(markdown_content)}글자(실제 글자 {content_chars})가 저장되었습니다.")
         print(f"출력 파일: {output_file}")
+        return True
 
     # 명령줄 인수로 파일 경로 받기
     print(f"인수: {sys.argv}")
@@ -101,54 +127,53 @@ def main():
         if ext not in SUPPORTED_EXTENSIONS:
             print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
             print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
-            return
+            return 1
         if not os.path.exists(input_file):
             print(f"오류: 파일을 찾을 수 없습니다: {input_file}")
-            return
-        process_file(input_file)
-    else:
-        # 현재 디렉토리에서 지원되는 파일 찾기
-        supported_files = sorted([f for f in os.listdir('.') if os.path.isfile(f) and os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS])
-        if not supported_files:
-            print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
-            print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
-            return
-        if len(supported_files) == 1:
-            process_file(supported_files[0])
-        else:
-            print(f"지원되는 파일 {len(supported_files)}개 발견:")
-            for i, f in enumerate(supported_files, 1):
-                print(f"  {i}. {f}")
-            print()
-            print("1) 하나씩 선택하여 변환")
-            print("2) 모두 변환")
-            choice = input("선택 (1/2): ").strip()
-            print()
+            return 1
+        return 0 if process_file(input_file) else 1
 
-            if choice == "2":
-                for i, f in enumerate(supported_files, 1):
-                    print(f"[{i}/{len(supported_files)}] {f}")
-                    try:
-                        process_file(f)
-                    except Exception as e:
-                        print(f"오류 발생: {e}")
-                    print()
-            else:
-                for i, f in enumerate(supported_files, 1):
-                    yn = input(f"[{i}/{len(supported_files)}] {f} 변환? (Y/N): ").strip().upper()
-                    if yn == "Y":
-                        try:
-                            process_file(f)
-                        except Exception as e:
-                            print(f"오류 발생: {e}")
-                    else:
-                        print("건너뜀.")
-                    print()
+    # 현재 디렉토리에서 지원되는 파일 찾기
+    supported_files = sorted([f for f in os.listdir('.') if os.path.isfile(f) and os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS])
+    if not supported_files:
+        print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
+        print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
+        return 1
+    if len(supported_files) == 1:
+        return 0 if process_file(supported_files[0]) else 1
+
+    print(f"지원되는 파일 {len(supported_files)}개 발견:")
+    for i, f in enumerate(supported_files, 1):
+        print(f"  {i}. {f}")
+    print()
+    print("1) 하나씩 선택하여 변환")
+    print("2) 모두 변환")
+    choice = input("선택 (1/2): ").strip()
+    print()
+
+    all_ok = True
+    for i, f in enumerate(supported_files, 1):
+        if choice != "2":
+            yn = input(f"[{i}/{len(supported_files)}] {f} 변환? (Y/N): ").strip().upper()
+            if yn != "Y":
+                print("건너뜀.")
+                print()
+                continue
+        else:
+            print(f"[{i}/{len(supported_files)}] {f}")
+        try:
+            all_ok = process_file(f) and all_ok
+        except Exception as e:
+            print(f"오류 발생: {e}")
+            all_ok = False
+        print()
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
+    exit_code = 1
     try:
-        main()
+        exit_code = main()
     except Exception as e:
         print(f"\n오류 발생: {e}")
         print("\n상세 정보:")
@@ -162,3 +187,4 @@ if __name__ == "__main__":
             input("\nEnter를 눌러 종료...")
         except EOFError:
             pass
+    sys.exit(exit_code)

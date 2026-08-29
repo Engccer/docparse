@@ -2,6 +2,40 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
+## 2026-08-31 (적대적 감사 반영: 실패를 실패로 말하게 + 진단·규칙 정합)
+
+외부 감사(codex, 22건)를 코드로 교차 검증해 확인된 것만 반영. 합성 입력 회귀 27종 GREEN.
+
+### 실행 계약 (파서 11종 + 스크립트 공통)
+- **종료 코드**: 출력 파일을 만들었을 때만 0. 오류·빈 결과·검증 실패·부분 결과는 출력 없이 1. 종전에는 모든 CLI가 오류를 찍고도 0으로 끝났다.
+- **잔존 출력 제거**: 실행 시작 시 같은 이름의 이전 출력을 지운다. 실패한 실행 뒤 어제 파일이 오늘 결과로 퓨전에 편입되는 경로 차단.
+- **부분 결과 차단**: LlamaParse `(내용 없음)` 자리표시자 저장 금지, Gemini MAX_TOKENS 절단본 저장 금지, Upstage 비동기 배치 누락·다운로드 실패 시 전체 실패, Mistral 응답 쪽수 ≠ 원본 쪽수면 실패, ODL 실제 글자 0이면 실패, Google Vision 페이지 호출 실패(429·5xx 백오프 재시도 2회, 총 3회 호출 후)면 전체 실패.
+- **HWPX 경고 두 계급**: recall 미달·마커 누락은 출력 미작성(다른 로컬 파서와 같은 fail-closed), 이미지 존재·제어문자 제거는 안내만.
+- **pdfplumber PyMuPDF 필수**: 교차 투표 없는 PASS 폐지.
+
+### 로컬 파서 사각지대
+- docx_local: OMML 수식(`m:oMath`) 존재 시 거부(양쪽 관점 모두 못 읽어 recall로 안 잡히는 대칭 유실). 머리글·바닥글 이미지도 경고 집계.
+- xlsx_local: 도형·텍스트박스 텍스트 존재 시 거부, 셀 주석·메모 개수 고지.
+- upstage: header/footer/page_number로 제거한 텍스트 표본을 표준 출력에 남긴다.
+
+### 진단·비교·후처리
+- `assess_document.py`: **추천 표를 SKILL 정본과 일치**(medium=LlamaParse+Upstage, large/xlarge=LlamaParse+ODL, 스캔은 ODL 제외+Upstage(+Mistral)). 종전 medium=Upstage+Gemini, large=ODL+Upstage로 정본과 반대였고 스캔에도 ODL을 추천했다. 텍스트 레이어 표본을 앞 3쪽 → 앞 3쪽+전체 분산 12쪽 과반으로(표지 이미지 보고서 오판 해소). `signals`(PUA 밀도·라틴 비율·표본 쪽)와 `rule_hints`(진단으로 걸린 tier-rules 절) 추가. `import pymupdf` 우선(구 `fitz` 별칭이 stdout에 경고를 찍어 JSON 오염).
+- `compare_outputs.py`: 표 개수·실제 글자 수를 추천에 반영, `reasons` 출력.
+- `generate_alt_text.py`: 페이지 실패 1회 재시도, 미매핑 placeholder는 원문 유지(빈 문자열로 지우지 않음), 실패·미매핑 시 종료 코드 1.
+- `normalize_odl.py`: 이미지 placeholder를 삭제하지 않고 `(이미지: alt)` 표식으로 축약.
+- `apply_corrections.py`: 쪽 주석이 있는 마크다운에서 「원본 쪽」이 채워진 행은 그 쪽 구간에서만 치환. 전역 다중 치환은 경고.
+- `check_env.py`: pdfplumber에 PyMuPDF 요구, ODL에 Java 실행 파일 점검, gvision은 requests가 아니라 PyMuPDF 점검.
+
+### 문서 정합
+- SKILL.md 보정 규칙 목록을 tier-rules 판정 절 전부(21개)로 완성하고 「적용/해당 없음」 판정·Step 8 기록을 요구. Step 3에 실행 계약·bash 기준 명시(PowerShell 대체). 외부 비공개 스크립트 참조 제거.
+- tier-rules.md 「규칙 우선순위」 신설(포맷 게이트 > 금지 > 필수 추가 > 권장). 프랑스어 절 근거 `n=12` → `n=2`(장부 doc.id 기준 계수 규칙 위반이었다). 학생 답안 절의 Gemini 금지를 thinking OFF 조건부로 정정(앞 절과 모순).
+- fusion-prompt.md 전면 개정: 기준선을 Upstage 고정에서 「티어가 정한 Primary」로, 「단일 파서에만 있는 내용 제외」를 「원본 확인 후 삽입/제외」로.
+- README Gemini 30p → 15p(SKILL과 불일치). `.gitignore`에 `_pdfplumber`·`_xlsxlocal`·`_docxlocal`·`_with_alt` 출력 추가.
+
+### 감사 지적 중 반영하지 않은 것
+- ODL 이미지 삭제·Upstage 머리말 제거를 "의미 판단 없는 삭제"로 본 지적: 두 동작 자체는 의도된 노이즈 정책이라 유지하되, 삭제된 것이 흔적 없이 사라지지 않게(표식·표본 출력) 보완했다.
+- PowerShell 명령 불일치: 실행 환경이 bash(Git Bash·macOS)라 명령을 바꾸지 않고 기준·대체법만 명시했다.
+
 ## 2026-08-30 (규칙마다 근거 강도 병기 + 비PDF 표 내부 모순 정정)
 
 - **`references/tier-rules.md`의 모든 판정 절에 `*근거:*` 줄 추가**(25개 절). 규칙이 문서 몇 건에서 나왔는지(`n=12`·`n=1`·`미표기`·`능력표`)를 규칙 옆에 적는다. 종전에는 12건에서 나온 규칙과 1건에서 나온 규칙이 같은 문장 형식이라, 결과가 어긋났을 때 규칙과 문서 중 무엇을 먼저 의심할지 알 수 없었다. 파일 첫머리에 읽는 법 표를 두고, 하위 절은 상위 절 근거를 승계한다.

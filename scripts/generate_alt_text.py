@@ -17,6 +17,9 @@
 
 환경 변수
   GEMINI_API_KEY 필수 (--reuse-map만 사용 시는 불필요)
+
+종료 코드(2026-08-31): 페이지 호출 실패나 매핑 없는 placeholder가 하나라도 있으면 1.
+출력 파일은 만들되, 실패한 placeholder는 원문 그대로 남긴다(빈 문자열로 지우지 않는다).
 """
 from __future__ import annotations
 
@@ -116,8 +119,12 @@ def call_gemini(client, model: str, png_bytes: bytes, alt_list_str: str,
 
 
 def generate_map(pdf_path: Path, by_page, model: str, dpi: int,
-                 prompt_template: str, sleep_sec: float = 0.5) -> dict:
-    """페이지별 Gemini 호출로 매핑 dict 생성."""
+                 prompt_template: str, sleep_sec: float = 0.5) -> tuple[dict, list[int]]:
+    """페이지별 Gemini 호출로 매핑 dict 생성. (매핑, 실패한 페이지 목록) 반환.
+
+    페이지 호출이 실패하면 1회 재시도하고, 그래도 실패하면 페이지 번호를 기록해
+    호출자가 종료 코드로 드러내게 한다(종전에는 오류를 찍고 계속 진행해 성공 종료).
+    """
     try:
         import fitz
         from google import genai
@@ -129,6 +136,7 @@ def generate_map(pdf_path: Path, by_page, model: str, dpi: int,
         sys.exit("GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
     client = genai.Client(api_key=api_key)
     doc = fitz.open(str(pdf_path))
+    failed_pages: list[int] = []
     try:
         result_map: dict[str, dict] = {}
         for page_num in sorted(by_page.keys()):
@@ -137,12 +145,19 @@ def generate_map(pdf_path: Path, by_page, model: str, dpi: int,
                 f"{i+1}. {alt}" for i, (_, alt, _) in enumerate(items)
             )
             print(f"[페이지 {page_num}] 이미지 {len(items)}개 alt 생성 중...", flush=True)
-            try:
-                png = render_page(doc, page_num, dpi)
-                parsed = call_gemini(client, model, png, alt_list_str,
-                                     prompt_template, types_mod)
-            except Exception as e:
-                print(f"  [오류] {e}", flush=True)
+            parsed = None
+            for attempt in (1, 2):
+                try:
+                    png = render_page(doc, page_num, dpi)
+                    parsed = call_gemini(client, model, png, alt_list_str,
+                                         prompt_template, types_mod)
+                    break
+                except Exception as e:
+                    print(f"  [오류{' (재시도)' if attempt == 2 else ''}] {e}", flush=True)
+                    if attempt == 1:
+                        time.sleep(2)
+            if parsed is None:
+                failed_pages.append(page_num)
                 continue
             for item in parsed:
                 i = item.get("index")
@@ -160,11 +175,16 @@ def generate_map(pdf_path: Path, by_page, model: str, dpi: int,
             time.sleep(sleep_sec)
     finally:
         doc.close()
-    return result_map
+    return result_map, failed_pages
 
 
-def inject(markdown_text: str, alt_map: dict, keep_unmapped_alt: bool = True) -> tuple[str, int, int]:
+def inject(markdown_text: str, alt_map: dict, skip_korean: bool = False) -> tuple[str, int, int]:
     """매핑 dict로 markdown placeholder를 치환.
+
+    매핑이 없는 placeholder는 **원문 그대로 둔다**(종전에는 alt가 빈 것을 빈 문자열로
+    바꿔 도표가 있었다는 흔적까지 지웠다). 남은 placeholder는 Step 4 후처리에서
+    사람이 판단한다. `--skip-korean`으로 의도적으로 건너뛴 한국어 alt는 그대로
+    `(이미지: alt)`로 살리고 미매핑으로 세지 않는다.
 
     Returns: (새 텍스트, 치환된 개수, 매핑 없는 개수)
     """
@@ -178,11 +198,12 @@ def inject(markdown_text: str, alt_map: dict, keep_unmapped_alt: bool = True) ->
         if entry:
             replaced += 1
             return f"(이미지: {entry['ko_alt']})"
+        alt = m.group(1).strip()
+        if skip_korean and is_likely_korean(alt):
+            replaced += 1
+            return f"(이미지: {alt})"
         unmapped += 1
-        if keep_unmapped_alt:
-            alt = m.group(1).strip()
-            return f"(이미지: {alt})" if alt else ""
-        return ""
+        return full
 
     new_text = LLAMA_IMG_PATTERN.sub(_replace, markdown_text)
     return new_text, replaced, unmapped
@@ -218,6 +239,7 @@ def main():
         sys.exit(f"markdown 파일 없음: {args.markdown}")
     markdown_text = args.markdown.read_text(encoding="utf-8")
 
+    failed_pages: list[int] = []
     if args.reuse_map:
         if not args.reuse_map.exists():
             sys.exit(f"reuse-map 파일 없음: {args.reuse_map}")
@@ -236,20 +258,30 @@ def main():
             args.prompt.read_text(encoding="utf-8") if args.prompt
             else DEFAULT_PROMPT_TEMPLATE
         )
-        alt_map = generate_map(args.pdf, by_page, args.model, args.dpi, prompt_template)
+        alt_map, failed_pages = generate_map(args.pdf, by_page, args.model, args.dpi, prompt_template)
         if args.map:
             args.map.write_text(json.dumps(alt_map, ensure_ascii=False, indent=2),
                                 encoding="utf-8")
             print(f"매핑 JSON 저장: {args.map}", flush=True)
 
-    new_text, replaced, unmapped = inject(markdown_text, alt_map)
-    print(f"치환 완료: {replaced}개 매핑 적용, {unmapped}개 영문 alt fallback", flush=True)
+    new_text, replaced, unmapped = inject(markdown_text, alt_map, skip_korean=args.skip_korean)
+    print(f"치환 완료: {replaced}개 매핑 적용, {unmapped}개는 placeholder 원문 유지", flush=True)
 
     if args.output:
         args.output.write_text(new_text, encoding="utf-8")
         print(f"출력: {args.output}", flush=True)
     else:
         sys.stdout.write(new_text)
+
+    # 실패·미매핑은 출력은 남기되 종료 코드로 드러낸다(조용한 완료 금지).
+    if failed_pages or unmapped:
+        if failed_pages:
+            print(f"오류: 페이지 {failed_pages} alt 생성 실패(API 오류). 해당 페이지 placeholder는 원문 유지.",
+                  file=sys.stderr, flush=True)
+        if unmapped:
+            print(f"경고: 매핑 없는 placeholder {unmapped}개가 원문 그대로 남아 있습니다. Step 4에서 처리할 것.",
+                  file=sys.stderr, flush=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

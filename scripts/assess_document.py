@@ -1,7 +1,7 @@
-"""문서 사전 진단: 페이지 수, 텍스트 레이어, 표 힌트, 티어 분류.
+"""문서 사전 진단: 페이지 수, 텍스트 레이어, 표 힌트, 티어 분류, 보정 규칙 신호.
 
 Usage:
-    python assess_document.py "<파일경로>"
+    python assess_document.py "<파일경로>" [--lang ko]
 
 Output (stdout, JSON):
     {
@@ -11,12 +11,31 @@ Output (stdout, JSON):
         "has_text_layer": true,
         "table_hint": false,
         "tier": "xlarge",
-        "recommended_parsers": ["opendataloader", "upstage"]
+        "recommended_parsers": ["llamaparse", "opendataloader"],
+        "lang": "ko",
+        "signals": {
+            "sampled_pages": [1, 2, 3, 20, 40, ...],
+            "text_pages": 12,            # 표본 중 50자 이상 텍스트가 있는 쪽 수
+            "pua_per_10k": 3.1,          # 텍스트 레이어 1만 자당 PUA(U+E000~F8FF) 코드포인트
+            "latin_ratio": 0.12          # 문자(한글+라틴) 중 라틴 비율
+        },
+        "rule_hints": ["..."]            # references/tier-rules.md 절 이름. 진단으로 걸린 것만
     }
+
+추천 표는 SKILL.md Step 2 기본 티어 표와 tier-rules.md 「텍스트 레이어 없음」 절을
+그대로 옮긴 것이다(2026-08-31 정정. 종전에는 medium=Upstage+Gemini, large=ODL+Upstage로
+정본과 반대였고 스캔 문서에도 ODL을 추천했다). 정본이 바뀌면 이 표도 함께 바꾼다.
+
+임계값 출처(새로 지어내지 않았다. 표본 근거가 약한 것은 그대로 적는다):
+- 텍스트 레이어 쪽 판정 50자/쪽: 관행값. 표본 근거 없음.
+- table_hint 30%: 관행값. 표본 근거 없음(격자 검출 자체는 합성 PDF 양성 3·음성 4로 검증, CHANGELOG 3.19).
+- pua_per_10k 100: tier-rules 「수식이 있는 시험지」 절(78쪽 수식 시험지 1건 114~212 vs 비수식 3건 0.3~8.2).
+- latin_ratio 0.5: tier-rules 「Mistral Primary 고려 조건」의 "영어 비율 50%"(근거 미표기).
 """
 
 import json
 import os
+import re
 import sys
 
 
@@ -26,6 +45,16 @@ SUPPORTED_FORMATS = {
     ".hwp": "hwp", ".hwpx": "hwpx",
     ".docx": "docx", ".pptx": "pptx", ".xlsx": "xlsx",
 }
+
+TEXT_PAGE_MIN_CHARS = 50
+TABLE_HINT_RATIO = 0.3
+PUA_PER_10K_THRESHOLD = 100.0
+LATIN_RATIO_THRESHOLD = 0.5
+SAMPLE_MAX = 12
+
+_PUA = re.compile("[-]")
+_HANGUL = re.compile("[가-힣]")
+_LATIN = re.compile("[A-Za-zÀ-ÿ]")
 
 
 def page_has_ruled_grid(page, min_lines=3, tol=1.0):
@@ -94,34 +123,60 @@ def page_has_ruled_grid(page, min_lines=3, tol=1.0):
     return grid_v >= min_lines
 
 
+def sample_page_indexes(pages, limit=SAMPLE_MAX):
+    """앞 3쪽 + 문서 전체에 고르게 퍼진 쪽(0-based, 중복 제거·정렬).
+
+    앞쪽만 보면 표지가 통이미지인 보고서가 스캔본으로 오판된다(gotchas.md 실측).
+    """
+    if pages <= limit:
+        return list(range(pages))
+    idx = {0, 1, 2}
+    rest = limit - len(idx)
+    for k in range(rest):
+        idx.add(round(3 + (pages - 4) * (k + 1) / (rest + 1)))
+    return sorted(i for i in idx if i < pages)
+
+
 def assess_pdf(file_path):
     """PDF 파일 진단 (PyMuPDF 사용)."""
+    # `import fitz`는 PyMuPDF 1.28+에서 폐기 경고를 **stdout**에 찍어 JSON 앞에 섞인다.
+    # 신 모듈명(pymupdf)을 먼저 쓰고, 구버전에서만 fitz로 떨어진다.
     try:
-        import fitz
+        import pymupdf as fitz
     except ImportError:
-        print("오류: PyMuPDF 패키지가 필요합니다. pip install pymupdf", file=sys.stderr)
-        return None
+        try:
+            import fitz
+        except ImportError:
+            print("오류: PyMuPDF 패키지가 필요합니다. pip install pymupdf", file=sys.stderr)
+            return None
 
     doc = fitz.open(file_path)
     pages = len(doc)
+    sampled = sample_page_indexes(pages)
 
-    # 텍스트 레이어 확인 (첫 3페이지 샘플링)
-    text_chars = 0
-    sample_pages = min(3, pages)
-    for i in range(sample_pages):
-        text_chars += len(doc[i].get_text().strip())
-    has_text_layer = text_chars > (50 * sample_pages)
+    # 텍스트 레이어: 표본 쪽마다 글자 수를 세고, 과반이 50자 이상이면 true.
+    text_pages = 0
+    text_all = []
+    for i in sampled:
+        t = doc[i].get_text()
+        text_all.append(t)
+        if len(t.strip()) >= TEXT_PAGE_MIN_CHARS:
+            text_pages += 1
+    has_text_layer = text_pages * 2 >= len(sampled) if sampled else False
 
     # 표 힌트: 벡터 괘선 격자 기반. 구 휴리스틱(파이프·탭 문자)은 선으로 그린
     # 표를 원천적으로 못 잡아 교체(2026-08-10, CHANGELOG 3.19).
-    table_pages = 0
-    check_pages = min(10, pages)
-    for i in range(check_pages):
-        if page_has_ruled_grid(doc[i]):
-            table_pages += 1
-    table_hint = table_pages >= (check_pages * 0.3)
+    grid_pages = sum(1 for i in sampled[:10] if page_has_ruled_grid(doc[i]))
+    table_hint = grid_pages >= (min(10, len(sampled)) * TABLE_HINT_RATIO)
 
     doc.close()
+
+    joined = "".join(text_all)
+    pua_cp = len(_PUA.findall(joined))
+    pua_per_10k = round(pua_cp * 10000 / len(joined), 1) if joined else 0.0
+    hangul = len(_HANGUL.findall(joined))
+    latin = len(_LATIN.findall(joined))
+    latin_ratio = round(latin / (hangul + latin), 2) if (hangul + latin) else 0.0
 
     # 티어 분류
     if pages <= 15:
@@ -145,26 +200,35 @@ def assess_pdf(file_path):
         "has_text_layer": has_text_layer,
         "table_hint": table_hint,
         "tier": tier,
+        "signals": {
+            "sampled_pages": [i + 1 for i in sampled],
+            "text_pages": text_pages,
+            "pua_per_10k": pua_per_10k,
+            "latin_ratio": latin_ratio,
+        },
     }
 
 
 def recommend_parsers(fmt, tier, has_text_layer, table_hint, lang="ko"):
-    """티어와 포맷에 따른 파서 추천."""
+    """티어와 포맷에 따른 파서 추천. SKILL.md 기본 티어 표 + tier-rules 스캔 절을 그대로 옮긴다."""
 
     if fmt == "pdf":
         if tier == "small":
             parsers = ["gemini"]
         elif tier == "medium":
-            parsers = ["upstage", "gemini"]
-        elif tier == "large":
-            parsers = ["opendataloader", "upstage"]
-        else:  # xlarge
-            parsers = ["opendataloader", "upstage"]
+            parsers = ["llamaparse", "upstage"]
+        else:  # large, xlarge
+            parsers = ["llamaparse", "opendataloader"]
 
-        # 보정 규칙
-        if not has_text_layer and "upstage" not in parsers:
-            parsers.append("upstage")
-        if lang != "ko":
+        # 스캔(텍스트 레이어 없음): ODL은 텍스트 레이어 필수라 제외.
+        # tier-rules 「텍스트 레이어 없음」: medium=v2+Upstage, large/xlarge=v2+Upstage+Mistral.
+        if not has_text_layer:
+            parsers = [p for p in parsers if p != "opendataloader"]
+            if tier != "small" and "upstage" not in parsers:
+                parsers.append("upstage")
+            if tier in ("large", "xlarge") and "mistral" not in parsers:
+                parsers.append("mistral")
+        if lang != "ko" and "mistral" not in parsers:
             parsers.append("mistral")
 
         # Tier 0 (결정론 우선 게이트): 텍스트 레이어 + 벡터 괘선 격자면
@@ -199,10 +263,38 @@ def recommend_parsers(fmt, tier, has_text_layer, table_hint, lang="ko"):
     return parsers
 
 
+def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang):
+    """진단만으로 걸리는 tier-rules 절 이름. 걸리지 않은 절은 적지 않는다(해당 없음 ≠ 미판정).
+
+    손글씨·합본·인구통계 교차표·병합셀처럼 진단으로 못 잡는 특성은 SKILL.md 보정 규칙
+    목록에서 에이전트가 판단한다.
+    """
+    hints = []
+    if fmt == "pdf":
+        if table_hint and has_text_layer:
+            hints.append("괘선 정형 표 PDF (Tier 0)")
+        if not has_text_layer:
+            hints.append("텍스트 레이어 없음 (스캔/이미지 PDF)")
+            if signals["text_pages"] > 0:
+                hints.append(f"부분 스캔 의심: 표본 {len(signals['sampled_pages'])}쪽 중 {signals['text_pages']}쪽만 텍스트")
+        if signals["pua_per_10k"] >= PUA_PER_10K_THRESHOLD:
+            hints.append("수식이 있는 시험지 (PUA 밀도 ≥100/1만 자: LlamaParse v2 유일 Primary, ODL·Upstage Primary 부적격)")
+        if signals["latin_ratio"] >= LATIN_RATIO_THRESHOLD:
+            hints.append("영어 비율 ≥50% (Mistral Primary 고려 조건)")
+        if has_text_layer and tier in ("large", "xlarge"):
+            hints.append("ODL Primary 채택 전 본문 숫자 검증")
+        if tier == "small":
+            hints.append("PDF Read 도구의 시각 렌더링 = ground truth (≤20p)")
+    if lang != "ko":
+        hints.append("비한국어 문서 조건 정밀화")
+    return hints
+
+
 def main():
+    """반환값이 종료 코드다(0 성공 / 1 실패)."""
     if len(sys.argv) < 2:
         print("사용법: python assess_document.py <파일경로> [--lang ko]")
-        return
+        return 1
 
     # 인수 파싱
     args = sys.argv[1:]
@@ -221,14 +313,14 @@ def main():
 
     if not file_path or not os.path.exists(file_path):
         print(f"오류: 파일을 찾을 수 없습니다: {file_path}", file=sys.stderr)
-        return
+        return 1
 
     ext = os.path.splitext(file_path)[1].lower()
     fmt = SUPPORTED_FORMATS.get(ext)
     if not fmt:
         print(f"오류: 지원하지 않는 파일 형식입니다: {ext}", file=sys.stderr)
         print(f"지원 형식: {', '.join(SUPPORTED_FORMATS.keys())}", file=sys.stderr)
-        return
+        return 1
 
     result = {
         "file": os.path.basename(file_path),
@@ -238,7 +330,7 @@ def main():
     if fmt == "pdf":
         pdf_info = assess_pdf(file_path)
         if pdf_info is None:
-            return
+            return 1
         result.update(pdf_info)
     else:
         # 비PDF: 페이지 개념 없음, 파일 크기 기반 간이 판단
@@ -247,10 +339,15 @@ def main():
         result["pages"] = None
         result["has_text_layer"] = True  # 비PDF는 텍스트 기반
         result["table_hint"] = fmt == "xlsx"
+        result["signals"] = {"sampled_pages": [], "text_pages": 0, "pua_per_10k": 0.0, "latin_ratio": 0.0}
         if fmt == "hwpx":
             result["tier"] = "hwpx"  # 로컬 hwpx_local 우선 + Upstage 폴백
         elif fmt == "hwp":
             result["tier"] = "hwpx"  # HWPX 변환 후 hwpx 티어로 처리(직접은 Upstage)
+        elif fmt == "xlsx":
+            result["tier"] = "xlsx"
+        elif fmt == "docx":
+            result["tier"] = "docx"
         elif size_mb < 5:
             result["tier"] = "small"
         else:
@@ -265,9 +362,14 @@ def main():
     )
     result["recommended_parsers"] = parsers
     result["lang"] = lang
+    result["rule_hints"] = rule_hints(
+        fmt, result["tier"], result.get("has_text_layer", True),
+        result.get("table_hint", False), result["signals"], lang,
+    )
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

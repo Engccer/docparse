@@ -1,16 +1,26 @@
+"""LlamaParse v2 파서 (docparse).
+
+  python llamaparse_parse.py [--tier T] [--lang L] [--instructions FILE] [--credits] "<파일>"
+  → <파일>_llamaparse.md
+
+실패 계약(2026-08-31): 응답에 markdown_full·text_full이 모두 비면 출력 파일을 만들지
+않고 종료 코드 1(종전에는 "(내용 없음)" 7글자 파일이 완료본으로 남았다). 실행 시작
+시 같은 이름의 이전 출력을 지운다.
+"""
 import os
 import sys
 import traceback
 
 
 def main():
+    """반환값이 종료 코드다(0 성공 / 1 실패)."""
     try:
         from llama_cloud import Client
     except ImportError as e:
-        print(f"오류: llama-cloud 패키지를 찾을 수 없습니다.")
-        print(f"설치 명령: pip install llama-cloud")
+        print("오류: llama-cloud 패키지를 찾을 수 없습니다.")
+        print("설치 명령: pip install llama-cloud")
         print(f"상세: {e}")
-        return
+        return 1
 
     # API 키 설정
     try:
@@ -18,7 +28,7 @@ def main():
     except KeyError:
         print("오류: LLAMAPARSE_API_KEY 환경 변수가 설정되지 않았습니다.")
         print('설정 명령: setx LLAMAPARSE_API_KEY "your-api-key"')
-        return
+        return 1
 
     client = Client(api_key=api_key)
 
@@ -40,6 +50,11 @@ def main():
             return os.path.join(dir_path, output_name)
         return output_name
 
+    def clear_stale_output(output_file):
+        if os.path.exists(output_file):
+            os.remove(output_file)
+            print(f"기존 출력 제거: {output_file}")
+
     def estimate_credits(input_file, tier):
         """파일 페이지 수 추정 및 크레딧 계산"""
         credits_per_page = {'fast': 1, 'cost_effective': 3, 'agentic': 10, 'agentic_plus': 45}
@@ -56,8 +71,10 @@ def main():
         return None, None
 
     def process_file(input_file, tier='agentic', language='ko', custom_prompt=None):
-        """단일 파일 문서 파싱 (LlamaParse API v2)"""
+        """단일 파일 문서 파싱 (LlamaParse API v2). 출력 파일을 만들었으면 True."""
         print(f"입력 파일: {input_file}")
+        output_file = get_output_filename(input_file)
+        clear_stale_output(output_file)
 
         # 파일 크기 확인
         file_size = os.path.getsize(input_file)
@@ -112,16 +129,19 @@ def main():
                 **parse_kwargs,
             )
 
-        # 결과 추출
-        markdown_content = getattr(result, 'markdown_full', None) or getattr(result, 'text_full', None) or "(내용 없음)"
+        # 결과 추출: 둘 다 비면 실패(빈 자리표시자 파일을 완료본으로 남기지 않는다)
+        markdown_content = getattr(result, 'markdown_full', None) or getattr(result, 'text_full', None)
+        if not markdown_content or not markdown_content.strip():
+            status = getattr(result, 'status', None)
+            print(f"오류: 응답에 내용이 없습니다(status={status}). 출력 파일을 만들지 않았습니다.")
+            return False
 
-        # 결과 저장
-        output_file = get_output_filename(input_file)
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(markdown_content)
 
         print(f"변환 완료! {len(markdown_content)}글자가 저장되었습니다.")
         print(f"출력 파일: {output_file}")
+        return True
 
     # 명령줄 인수 처리
     print(f"인수: {sys.argv}")
@@ -141,7 +161,7 @@ def main():
             if tier not in TIERS:
                 print(f"오류: 지원하지 않는 파싱 티어: {tier}")
                 print(f"지원 티어: {', '.join(TIERS)}")
-                return
+                return 1
             i += 2
         elif arg == '--lang' and i + 1 < len(sys.argv):
             language = sys.argv[i + 1]
@@ -153,21 +173,21 @@ def main():
             instr_path = sys.argv[i + 1]
             if not os.path.exists(instr_path):
                 print(f"오류: --instructions 파일을 찾을 수 없습니다: {instr_path}")
-                return
+                return 1
             with open(instr_path, 'r', encoding='utf-8') as f:
                 custom_prompt = f.read().strip()
             if not custom_prompt:
                 print(f"오류: --instructions 파일이 비어 있습니다: {instr_path}")
-                return
+                return 1
             i += 2
         elif arg in ('--help', '-h'):
             print("사용법: python llamaparse_parse.py [옵션] [파일경로]")
             print()
             print("옵션:")
             print("  --tier TIER          파싱 티어 (fast, cost_effective, agentic, agentic_plus)")
-            print(f"                       기본값: agentic (10크레딧/페이지)")
+            print("                       기본값: agentic (10크레딧/페이지)")
             print("  --lang LANG          OCR 언어 코드 (예: ko, en, ja, zh)")
-            print(f"                       기본값: ko")
+            print("                       기본값: ko")
             print("  --instructions FILE  자연어 파싱 지시(custom_prompt) 파일 경로")
             print("                       agentic·agentic_plus 티어에서만 적용")
             print("                       예: 이미지 alt text 한국어 상세화, 헤딩 중복 억제 등")
@@ -185,7 +205,7 @@ def main():
             print("  python llamaparse_parse.py --instructions accessible.txt manual.pdf")
             print("  python llamaparse_parse.py --credits")
             print("  python llamaparse_parse.py  (현재 폴더에서 자동 탐색)")
-            return
+            return 0
         else:
             files_to_process.append(arg)
             i += 1
@@ -206,66 +226,71 @@ def main():
                 print(f"크레딧: {grant['remaining_balance']:,} / {grant['starting_balance']:,} (갱신: {grant['expires_at'][:10]})")
         except Exception as e:
             print(f"크레딧 조회 실패: {e}")
+            if not files_to_process:
+                return 1
         if not files_to_process:
-            return
+            return 0
 
     if files_to_process:
+        all_ok = True
         for input_file in files_to_process:
             ext = os.path.splitext(input_file)[1].lower()
             if ext not in SUPPORTED_EXTS:
                 print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
                 print(f"지원 형식: {', '.join(sorted(SUPPORTED_EXTS))}")
+                all_ok = False
                 continue
             if not os.path.exists(input_file):
                 print(f"오류: 파일을 찾을 수 없습니다: {input_file}")
+                all_ok = False
                 continue
-            process_file(input_file, tier, language, custom_prompt)
-    else:
-        # 현재 디렉토리에서 지원되는 파일 찾기
-        supported_files = sorted([
-            f for f in os.listdir('.')
-            if os.path.isfile(f) and os.path.splitext(f)[1].lower() in SUPPORTED_EXTS
-        ])
-        if not supported_files:
-            print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
-            print(f"지원 형식: {', '.join(sorted(SUPPORTED_EXTS))}")
-            return
-        if len(supported_files) == 1:
-            process_file(supported_files[0], tier, language, custom_prompt)
-        else:
-            print(f"지원되는 파일 {len(supported_files)}개 발견:")
-            for idx, f in enumerate(supported_files, 1):
-                print(f"  {idx}. {f}")
-            print()
-            print("1) 하나씩 선택하여 변환")
-            print("2) 모두 변환")
-            choice = input("선택 (1/2): ").strip()
-            print()
+            all_ok = process_file(input_file, tier, language, custom_prompt) and all_ok
+        return 0 if all_ok else 1
 
-            if choice == "2":
-                for idx, f in enumerate(supported_files, 1):
-                    print(f"[{idx}/{len(supported_files)}] {f}")
-                    try:
-                        process_file(f, tier, language, custom_prompt)
-                    except Exception as e:
-                        print(f"오류 발생: {e}")
-                    print()
-            else:
-                for idx, f in enumerate(supported_files, 1):
-                    yn = input(f"[{idx}/{len(supported_files)}] {f} 변환? (Y/N): ").strip().upper()
-                    if yn == "Y":
-                        try:
-                            process_file(f, tier, language, custom_prompt)
-                        except Exception as e:
-                            print(f"오류 발생: {e}")
-                    else:
-                        print("건너뜀.")
-                    print()
+    # 현재 디렉토리에서 지원되는 파일 찾기
+    supported_files = sorted([
+        f for f in os.listdir('.')
+        if os.path.isfile(f) and os.path.splitext(f)[1].lower() in SUPPORTED_EXTS
+    ])
+    if not supported_files:
+        print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
+        print(f"지원 형식: {', '.join(sorted(SUPPORTED_EXTS))}")
+        return 1
+    if len(supported_files) == 1:
+        return 0 if process_file(supported_files[0], tier, language, custom_prompt) else 1
+
+    print(f"지원되는 파일 {len(supported_files)}개 발견:")
+    for idx, f in enumerate(supported_files, 1):
+        print(f"  {idx}. {f}")
+    print()
+    print("1) 하나씩 선택하여 변환")
+    print("2) 모두 변환")
+    choice = input("선택 (1/2): ").strip()
+    print()
+
+    all_ok = True
+    for idx, f in enumerate(supported_files, 1):
+        if choice != "2":
+            yn = input(f"[{idx}/{len(supported_files)}] {f} 변환? (Y/N): ").strip().upper()
+            if yn != "Y":
+                print("건너뜀.")
+                print()
+                continue
+        else:
+            print(f"[{idx}/{len(supported_files)}] {f}")
+        try:
+            all_ok = process_file(f, tier, language, custom_prompt) and all_ok
+        except Exception as e:
+            print(f"오류 발생: {e}")
+            all_ok = False
+        print()
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
+    exit_code = 1
     try:
-        main()
+        exit_code = main()
     except Exception as e:
         print(f"\n오류 발생: {e}")
         print("\n상세 정보:")
@@ -279,3 +304,4 @@ if __name__ == "__main__":
             input("\nEnter를 눌러 종료...")
         except EOFError:
             pass
+    sys.exit(exit_code)

@@ -20,7 +20,7 @@
 | **xlsx_local** | `parsers/xlsx_local_parse.py` | `_xlsxlocal.md` | 없음 (로컬, 무료) | XLSX 전용, 오프라인, 비-LLM. openpyxl 추출 전체를 원시 XML 자체 해석과 값 멀티셋으로 교차 검증. 병합 범위 명시 보존, 숨김 데이터 보존·고지, 미계산 수식은 원문 보존. 차트·이미지 내 텍스트는 범위 밖. |
 | **docx_local** | `parsers/docx_local_parse.py` | `_docxlocal.md` | 없음 (로컬, 무료) | DOCX 전용, 오프라인, 비-LLM. 본문 순서 보존 추출 + document.xml 전수 recall 대조. 텍스트박스·각주 등 유실 위험 구조는 즉시 거부(승격). 이미지 내 텍스트는 범위 밖. |
 | **upstage** | `parsers/upstage_parse.py` | `_upstage.md` | `UPSTAGE_API_KEY` | 베이스라인. 노이즈 필터링·완전성 최강, 메타데이터 우수. |
-| **gemini** | `parsers/gemini_parse.py` | `_gemini.md` | `GEMINI_API_KEY` | 텍스트 품질·헤딩 최상. 짧은 PDF(30페이지 이하)에서 신뢰. |
+| **gemini** | `parsers/gemini_parse.py` | `_gemini.md` | `GEMINI_API_KEY` | 텍스트 품질·헤딩 최상. small 티어(15페이지 이하)만 Primary. 출력이 토큰 한도에서 잘리면 저장하지 않음. |
 | **llamaparse (LlamaParse v2)** | `parsers/llamaparse_parse.py` | `_llamaparse.md` | `LLAMAPARSE_API_KEY` | medium 이상 PDF의 기본 Primary(agentic 티어). 표 열 정확도·OCR 강함. |
 | **mistral** | `parsers/mistral_parse.py` | `_mistral.md` | `MISTRAL_API_KEY` | 대형 문서 완전성·3-way 교차검증. |
 | **opendataloader** | `parsers/opendataloader_parse.py` | `_opendataloader.md` | 없음 (로컬, 무료) | PDF 전용. Java 런타임과 기존 텍스트 레이어 필요. |
@@ -103,7 +103,7 @@ python parsers/docx_local_parse.py input.docx     # 로컬, 무료, DOCX 전용
 python parsers/opendataloader_parse.py input.pdf  # 로컬, 무료, Java 필요
 ```
 
-경로 없이 실행하면 현재 디렉터리에서 지원 파일을 자동 탐지합니다. 출력은 입력 옆에 `<name>_<service>.md` 형식으로 기록됩니다(예: `input_upstage.md`). 보조 스크립트는 `scripts/` 아래에 있습니다(`assess_document.py`, `compare_outputs.py`, `normalize_odl.py` 등).
+경로 없이 실행하면 현재 디렉터리에서 지원 파일을 자동 탐지합니다. 출력은 입력 옆에 `<name>_<service>.md` 형식으로 기록됩니다(예: `input_upstage.md`). 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이며, 오류·빈 결과·검증 실패·부분 결과는 출력 없이 1로 끝나고 실행 시작 시 같은 이름의 이전 출력을 지웁니다. 보조 스크립트는 `scripts/` 아래에 있습니다(`assess_document.py`, `compare_outputs.py`, `normalize_odl.py` 등).
 
 ## 이식성 (코딩 에이전트 호환)
 
@@ -118,7 +118,7 @@ docparse는 Claude Code 스킬로 개발됐지만, 구성요소에 따라 다른
 **무료, 로컬 (API 키 불필요, 오프라인 동작):**
 
 - `hwpx_local` (`hwpx_local_parse.py`): HWPX 전용, `hwpx-tomd` 패키지 필요.
-- `pdfplumber` (`pdfplumber_parse.py`): 괘선 표 + 텍스트 레이어 PDF 전용(Tier 0), `pdfplumber` 패키지 필요.
+- `pdfplumber` (`pdfplumber_parse.py`): 괘선 표 + 텍스트 레이어 PDF 전용(Tier 0), `pdfplumber` + `PyMuPDF` 패키지 필요(2엔진 교차 투표 필수).
 - `xlsx_local` (`xlsx_local_parse.py`): XLSX 전용, `openpyxl` 패키지 필요.
 - `docx_local` (`docx_local_parse.py`): DOCX 전용, `python-docx` 패키지 필요.
 - `opendataloader` (`opendataloader_parse.py`): 텍스트 레이어가 있는 PDF 전용, Java 런타임 필요.

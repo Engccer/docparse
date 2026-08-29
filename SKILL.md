@@ -32,12 +32,12 @@ metadata:
 
 | 스크립트 | 출력 | API | 비고 |
 |---------|------|-----|------|
-| `hwpx_local_parse.py` | `_hwpxlocal.md` | 없음 (로컬) | **HWPX 전용·무료·오프라인**. hwpx-tomd 패키지 엔진(글상자·tail·표 병합 보존, 자가검증 3종). `pip install hwpx-tomd` 필요. 이미지 내 텍스트는 범위 밖(경고). HWP는 hwp2hwpx 변환 후 입력 |
-| `xlsx_local_parse.py` | `_xlsxlocal.md` | 없음 (로컬) | **XLSX 전용·무료·오프라인·비-LLM**. 셀 값·병합 범위·숨김 상태가 파일에 명시된 포맷이라 파싱=읽기. openpyxl 추출 전체를 원시 XML 자체 해석과 값 멀티셋 교차 검증, 불일치 시 출력 미작성. 병합은 앵커+범위 명시, 숨김 데이터 보존·고지, 미계산 수식은 원문 보존. 차트·이미지 내 텍스트는 범위 밖(경고) |
-| `docx_local_parse.py` | `_docxlocal.md` | 없음 (로컬) | **DOCX 전용·무료·오프라인·비-LLM**. 본문 블록(헤딩·단락·표)을 문서 순서대로 추출, document.xml 전수 recall 토큰 대조 내장. 텍스트박스·필드·각주 등 python-docx 사각지대는 누락으로 드러나 즉시 거부(조용한 유실 차단). 중첩 표 거부, 이미지 내 텍스트는 범위 밖(경고) |
-| `pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬) | **괘선 표 PDF 전용(Tier 0)·무료·오프라인·비-LLM**. 격자 추출 + 좌표 재배치 양방향 자가검증(열 배정 오류·값 소실 검출) + PyMuPDF find_tables 독립 2엔진 교차 투표, 빈 셀 보존, 환각·무단교정 구조적으로 없음. 스캔(출력 0)·괘선 없는 표·병합 셀은 범위 밖 |
-| `upstage_parse.py` | `_upstage.md` | UPSTAGE_API_KEY | 기준선, 노이즈 필터링 최강, 완전성 최고 |
-| `gemini_parse.py` | `_gemini.md` | GEMINI_API_KEY | `gemini-3.5-flash`(thinking 모델). 텍스트 품질·체크박스·한글이름 최상이나 **장문에서 요약화 위험**. 기본 `thinking_budget=0`(요약화 방지·충실 전사), `--thinking`으로 켜면 체크박스·정밀 판독↑(소형 보조용). small(≤15p)만 Primary |
+| `hwpx_local_parse.py` | `_hwpxlocal.md` | 없음 (로컬) | **HWPX 전용·무료·오프라인**. hwpx-tomd 패키지 엔진(글상자·tail·표 병합 보존, 자가검증 3종). `pip install hwpx-tomd` 필요. 단어/글자 recall 미달·마커 누락 경고면 출력 미작성(승격), 이미지 내 텍스트는 범위 밖(경고 후 출력 유지). HWP는 hwp2hwpx 변환 후 입력 |
+| `xlsx_local_parse.py` | `_xlsxlocal.md` | 없음 (로컬) | **XLSX 전용·무료·오프라인·비-LLM**. 셀 값·병합 범위·숨김 상태가 파일에 명시된 포맷이라 파싱=읽기. openpyxl 추출 전체를 원시 XML 자체 해석과 값 멀티셋 교차 검증, 불일치·도형 텍스트박스 존재 시 출력 미작성. 병합은 앵커+범위 명시, 숨김 데이터 보존·고지, 미계산 수식은 원문 보존, 셀 주석은 개수 고지. 차트·이미지 내 텍스트는 범위 밖(경고) |
+| `docx_local_parse.py` | `_docxlocal.md` | 없음 (로컬) | **DOCX 전용·무료·오프라인·비-LLM**. 본문 블록(헤딩·단락·표)을 문서 순서대로 추출, document.xml 전수 recall 토큰 대조 내장. 텍스트박스·필드·각주 등 python-docx 사각지대는 누락으로 드러나 즉시 거부(조용한 유실 차단). 수식(OMML)·심볼 글리프·중첩 표도 거부, 이미지 내 텍스트는 범위 밖(머리글 포함 집계·경고) |
+| `pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬) | **괘선 표 PDF 전용(Tier 0)·무료·오프라인·비-LLM**. 격자 추출 + 좌표 재배치 양방향 자가검증(열 배정 오류·값 소실 검출) + PyMuPDF find_tables 독립 2엔진 교차 투표(PyMuPDF 필수, 없으면 출력 미작성), 빈 셀 보존, 환각·무단교정 구조적으로 없음. 스캔(출력 0)·괘선 없는 표·병합 셀은 범위 밖 |
+| `upstage_parse.py` | `_upstage.md` | UPSTAGE_API_KEY | 기준선, 노이즈 필터링 최강, 완전성 최고. header/footer/page_number로 제거한 텍스트는 표준 출력에 표본을 남긴다 |
+| `gemini_parse.py` | `_gemini.md` | GEMINI_API_KEY | `gemini-flash-latest`(서버 별칭, thinking 모델. 세대는 check-stack-updates가 감시). 텍스트 품질·체크박스·한글이름 최상이나 **장문에서 요약화 위험**. 기본 `thinking_budget=0`(요약화 방지·충실 전사), `--thinking`으로 켜면 체크박스·정밀 판독↑(소형 보조용). 출력이 토큰 한도에서 잘리면 저장하지 않는다. small(≤15p)만 Primary |
 | `llamaparse_parse.py` | `_llamaparse.md` | LLAMAPARSE_API_KEY | **v2 agentic 기본**. 표 열 정확도·OCR 우수. 10크레딧/p |
 | `mistral_parse.py` | `_mistral.md` | MISTRAL_API_KEY | `mistral-ocr-4`. 대용량 완전성 + **헤딩 구조 생성(ocr-4 신규)**, 교차 검증용. 노이즈·OCR 글자 드리프트·수기 과잉교정 잔존 |
 | `opendataloader_parse.py` | `_opendataloader.md` | 없음 (로컬) | Java 필요, PDF 전용, 텍스트 레이어 필수 |
@@ -49,10 +49,10 @@ metadata:
 | 스크립트 | 용도 |
 |---------|------|
 | `check_env.py` | 파서별 의존 패키지·API 키 준비 상태 + 키 발급 URL 점검 (첫 실행 시·읽기 전용) |
-| `assess_document.py` | 문서 사전 진단 (페이지 수·텍스트 레이어·티어·파서 추천 JSON) |
-| `compare_outputs.py` | 파서 출력 비교 (heading 갭·표 수·퓨전 전략) |
-| `normalize_odl.py` | ODL 출력 자동 정리 (페이지 구분자·h6 정규화·heading 승격·빈 줄 압축) |
-| `generate_alt_text.py` | 시각장애인 접근성 alt text 자동 생성 (PyMuPDF + Gemini Vision, 한국어 상세화) |
+| `assess_document.py` | 문서 사전 진단 (페이지 수·텍스트 레이어·티어·파서 추천 JSON + `signals`(PUA 밀도·라틴 비율·표본 쪽) + `rule_hints`(진단만으로 걸린 tier-rules 절)) |
+| `compare_outputs.py` | 파서 출력 비교 (heading 갭·표 수·실제 글자 수·퓨전 전략 + 근거) |
+| `normalize_odl.py` | ODL 출력 자동 정리 (페이지 구분자·이미지 표식 축약·h6 정규화·heading 승격·빈 줄 압축) |
+| `generate_alt_text.py` | 시각장애인 접근성 alt text 자동 생성 (PyMuPDF + Gemini Vision, 한국어 상세화). 실패·미매핑 placeholder는 원문 유지 + 종료 코드 1 |
 | `extract_vision_drafts.py` | 캐스케이드 ②단계: `_gvision.md`에서 페이지별 영어 드래프트(라틴 포함·한글 미포함 라인)+저신뢰 목록을 `draft_pNN.txt`로 추출. Claude repair 입력 |
 | `hwpx_enrich.py` | HWPX 결정론 보강: hwpx-tomd 출력에 **개요 스타일→`#` 제목**, **취소선 `~~`·강조색 `<mark>`**(charPr), **인쇄 PDF 실제 쪽 `<!-- p.N -->`**(pdftotext 쪽 텍스트와 전역 LIS 정렬), 간지·머리말 잔재 삭제를 문단 단위 정확 일치로만 입힌다(2026-08-28, 554쪽 HWP 보고서에서 제목 301·서식 런 729·쪽 주석 134 실측) |
 | `apply_corrections.py` | **정본 수정 목록 CSV** 적용기: 오탈자·개인정보·표기 정규화를 손으로 고치지 않고 CSV(문서·원본 쪽·원문·수정문·유형·처리·근거)로 적용·검증(원문 0회면 오류, 치환 후 잔존 검사, 원본 쪽 자동 채움). 정본을 재생성해도 같은 CSV로 같은 결과 |
@@ -106,7 +106,9 @@ python "<스킬루트>/scripts/check_env.py"
 python "<스킬루트>/scripts/assess_document.py" "<파일경로>"
 ```
 
-JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 티어별 파서 전략 결정. `table_hint: true`는 벡터 괘선 격자가 감지됐다는 뜻으로, 텍스트 레이어가 있으면 `recommended_parsers` 선두에 `pdfplumber`가 온다(Step 2 Tier 0).
+JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 티어별 파서 전략 결정. `table_hint: true`는 벡터 괘선 격자가 감지됐다는 뜻으로, 텍스트 레이어가 있으면 `recommended_parsers` 선두에 `pdfplumber`가 온다(Step 2 Tier 0). `recommended_parsers`는 Step 2 기본 티어 표와 같은 값이다(표가 바뀌면 스크립트도 바꾼다).
+
+`signals`는 결정론적으로 잴 수 있는 것만 담는다: `text_pages`(표본 쪽 중 텍스트가 있는 쪽 수. 표본은 앞 3쪽 + 문서 전체 분산 최대 12쪽), `pua_per_10k`(텍스트 레이어 1만 자당 PUA 코드포인트. ≥100이면 수식 시험지 규칙), `latin_ratio`(문자 중 라틴 비율. ≥0.5면 Mistral Primary 고려 조건). `rule_hints`는 **진단만으로 걸린** tier-rules 절 이름이며, 비어 있다는 것은 "해당 없음"이 아니라 "진단으로는 판정할 수 없는 절이 남아 있다"는 뜻이다. 손글씨·합본·병합셀·인구통계 교차표는 Step 2 보정 규칙 목록에서 에이전트가 직접 판정한다.
 
 ### Step 2: 적응형 파서 선택
 
@@ -129,7 +131,7 @@ JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 
 
 **HWPX 결정론 보강(`scripts/hwpx_enrich.py`, 2026-08-28)**: hwpx-tomd는 본문·표를 정확히 옮기지만 제목 수준·취소선·글자색·쪽 번호를 버린다. 보고서류(개요 스타일로 제목을 잡은 문서, 서식이 의미를 갖는 조사지, 검수자가 원본 쪽수로 대조하는 문서)는 변환 직후 `hwpx_enrich.py --hwpx <원본> --md <_hwpxlocal.md> --pdf <인쇄 PDF> --heading "개요 2:2,개요 3:3,…" --mark-color 0000FF`로 보강한다. 제목은 `header.xml`의 style 이름(「개요 1~10」, 부 제목은 머리말 스타일)→레벨 매핑, 서식은 `charPr`의 `strikeout`·`textColor`, 쪽 번호는 PDF 쪽 텍스트(pdftotext)와의 전역 단조 정렬(LIS)로 잡는다(kordoc 등의 추정 페이지네이션은 인쇄본과 어긋나므로 쓰지 않는다). 원본과 달라지는 수정(오탈자·개인정보)은 `apply_corrections.py`로 CSV 경유만. **kordoc·pyhwp는 보조·대조용**: kordoc JSON은 표별 rowSpan/colSpan 명세와 장 제목이 유용하지만 쪽 번호는 자체 추정이고, pyhwp `hwp5proc xml`·한컴 COM 변환본은 **취소선(`line_through`/strikeout)을 표지 제목까지 켜진 것으로 읽어 신뢰할 수 없다**(2023 보고서 실측: hwp2hwpx HWPX의 charPr 취소선 10런이 인쇄본과 정확히 일치, COM 21,680런·pyhwp 43,616런은 오판). 표 병합은 `hwpx-tomd --merge-fill`로 세로·가로 병합값을 덮인 칸에 반복 기입한다(빈 칸이 「병합」인지 「원래 빈 셀」인지 독자와 RAG가 구분할 수 없기 때문. 병합셀 하나에 항목 여러 개가 들어 있으면 셀째로 반복되므로 1:1 대응 날조가 생기지 않는다).
 
-**초안 HWP + 인쇄 PDF 하이브리드(2026-08-28, 인쇄 책자 3종 실측)**: 편집 원본이 인쇄본과 판본이 다르면(초안 HWP가 회수된 경우) HWP를 내용 정본으로 쓰지 말고 **구조는 HWP, 내용은 PDF**로 나눈다. ① 본문·표는 hwpx-tomd, 제목은 `hwpx_enrich.py --title-table '^\d{1,2}$:2'`(인쇄 책자는 절 제목을 `| 1 | 제목 |` 두 칸 표로 디자인한다)와 `--heading-regex`의 번호 패턴(수준은 문서마다 다르므로 상수로 박는다; `'^□ :+1'`처럼 직전 제목 기준 상대 수준을 쓰면 같은 규칙의 형제는 같은 수준, H1은 부모로 삼지 않는다)으로 세운다. ⚠ 부 제목(`머-우` 등 머리말 스타일)은 **구역 머리말이라 구역 나누기 위치(본문 중간)에 찍힌다** — 간지 레이아웃 표(로마 숫자 행)에서 H1을 만들고 머리말 유래 H1은 지운다(webfortd `scripts/source-v4/postprocess-hybrid.py`). ② PDF 대조는 어절 차집합 + 부분 문자열 필터(`compare-md-pdf.py`)로 하고, 남은 어휘로 **문장 대응표**를 만들어 문구 수정은 `apply_corrections.py` CSV, 최종본 추가분은 앵커 삽입 명세(`apply-additions.py`: 앵커 0회·2회 이상이면 중단)로 반영한다. ③ 「PDF에만 있음」이 곧 추가분은 아니다: HWP에서 **그림**(BMP 흐름도·한도 표)이던 것이 인쇄본에서 텍스트로 재조판된 경우가 많으므로 이미지 배치 위치와 PDF 텍스트를 먼저 대조한다(`--image-dir` 추출 목록 + 직전 줄 문맥). 심볼 글꼴 PUA 글리프(U+F0E8 →, U+F003B ↓, U+F0FE □)는 텍스트로는 빈 칸이라 표 앵커·검색이 어긋나므로 후처리에서 치환한다.
+**초안 HWP + 인쇄 PDF 하이브리드(2026-08-28, 인쇄 책자 3종 실측)**: 편집 원본이 인쇄본과 판본이 다르면(초안 HWP가 회수된 경우) HWP를 내용 정본으로 쓰지 말고 **구조는 HWP, 내용은 PDF**로 나눈다. ① 본문·표는 hwpx-tomd, 제목은 `hwpx_enrich.py --title-table '^\d{1,2}$:2'`(인쇄 책자는 절 제목을 `| 1 | 제목 |` 두 칸 표로 디자인한다)와 `--heading-regex`의 번호 패턴(수준은 문서마다 다르므로 상수로 박는다; `'^□ :+1'`처럼 직전 제목 기준 상대 수준을 쓰면 같은 규칙의 형제는 같은 수준, H1은 부모로 삼지 않는다)으로 세운다. ⚠ 부 제목(`머-우` 등 머리말 스타일)은 **구역 머리말이라 구역 나누기 위치(본문 중간)에 찍힌다** — 간지 레이아웃 표(로마 숫자 행)에서 H1을 만들고 머리말 유래 H1은 지운다(문서 고유 후처리라 이 저장소에는 일반 스크립트가 없다. `hwpx_enrich.py --title-table`·`--heading-regex`로 세운 뒤 남는 머리말 H1을 지우는 짧은 스크립트를 작업 폴더에 둔다). ② PDF 대조는 어절 차집합 + 부분 문자열 필터로 하고(작업 폴더 스크립트), 남은 어휘로 **문장 대응표**를 만들어 문구 수정은 `apply_corrections.py` CSV로, 최종본 추가분은 앵커 삽입 명세(앵커가 0회 또는 2회 이상 맞으면 중단)로 반영한다. ③ 「PDF에만 있음」이 곧 추가분은 아니다: HWP에서 **그림**(BMP 흐름도·한도 표)이던 것이 인쇄본에서 텍스트로 재조판된 경우가 많으므로 이미지 배치 위치와 PDF 텍스트를 먼저 대조한다(`--image-dir` 추출 목록 + 직전 줄 문맥). 심볼 글꼴 PUA 글리프(U+F0E8 →, U+F003B ↓, U+F0FE □)는 텍스트로는 빈 칸이라 표 앵커·검색이 어긋나므로 후처리에서 치환한다.
 
 **Upstage로 교차/대체하는 경우**: (1) **이미지 안의 텍스트**(제목·도표·캡션 등)가 중요한 문서. hwpx_local은 이미지 텍스트를 추출하지 못하고 본문에 이미지가 있으면 경고한다(OCR은 Upstage 영역). (2) **시각적 배치 재현**이 중요한 문서(고사 원안 레이아웃 등). 글상자는 anchor 기반 reading-order 근사이고 중첩표는 텍스트로 평탄화된다. (3) hwpx_local의 **recall·마커 경고**가 뜨는 문서. 이 경우 `upstage_parse.py`를 함께 돌려 대조한다.
 
@@ -147,22 +149,35 @@ HWP는 먼저 `hwpx-automation` 스킬의 `convert/hwp2hwpx.bat`(Windows) 또는
 
 #### 보정 규칙 (티어 결정 후 적용)
 
-아래 케이스에 해당하면 `references/tier-rules.md` 적용:
+`references/tier-rules.md`의 판정 절 전부다(2026-08-31 목록 완성. 종전 10개만 적혀 있어 나머지 절은 도달 경로가 없었다). **한 문서가 여러 절에 동시에 걸리는 것이 정상**이며, 충돌은 tier-rules 첫머리의 「규칙 우선순위」로 푼다(금지 > 필수 추가 > 권장). 아래 목록을 위에서 아래로 훑어 **절마다 「적용 / 해당 없음」을 판정하고 Step 8 요약에 적용된 절만 이름으로 적는다**(적지 않은 절은 판정하지 않은 것이 아니라 해당 없음으로 판정한 것이어야 한다). `assess_document.py`의 `rule_hints`가 자동으로 잡아 주는 절은 ◇ 표시.
 
-- 괘선 정형 표 PDF + 목표 산출물이 표 데이터 (Tier 0: pdfplumber 결정론 우선)
-- 텍스트 레이어 없음 (스캔/이미지 PDF)
+- ◇ 괘선 정형 표 PDF + 목표 산출물이 표 데이터 (Tier 0: pdfplumber 결정론 우선)
+- XLSX·DOCX (Office 로컬 결정론 파서) — 기본 티어 표의 해당 행
+- ◇ 텍스트 레이어 없음 (스캔/이미지 PDF). ◇ 부분 스캔 의심(표본 일부만 텍스트)
+- ◇ 영어 비율 ≥50% / 정형화 양식 (Mistral Primary 고려 조건) + Mistral ocr-4 헤딩 생성(폴백 Primary)
+- Mistral 추가 조건 (ODL↔Upstage 불일치·비한국어·스캔 large 이상) + ◇ 비한국어 문서 조건 정밀화(`--lang`≠ko)
+- 크레딧 부족 시 폴백 (ODL Primary + Upstage)
+- ◇ ODL Primary 채택 전 본문 숫자 검증 (텍스트 레이어 있어도)
+- 인쇄용 책자 PDF의 여러 쪽에 걸친 표·병합셀
+- 학술/연구 보고서 (v2 헤딩 위계 불안정)
 - 스캔 문서 + 표에 숫자 데이터 (신청서·양식·집계표)
+- 스캔 문서 + 인쇄체 표 (의무기록 검사결과 등)
+- 인쇄체 다중 인구통계 교차표 (이미지로만 존재: Google Vision 우선)
 - 동일 양식 다수 합본 PDF
-- 시험지·고사 원안·평가지 (옵션 텍스트 critical)
-- 수기 학생 답안 합본 (자유 서술 손글씨 + 체크박스, 오기 보존 critical, v2 단어 환각 경계, 전 페이지 시각 판독 필수)
-- 영어 비율 ≥50% / 정형화 양식 (Mistral Primary 후보)
-- 의무기록·법률문서·계약서 (정확성 critical, 3자 교차)
-- 비PDF 포맷 중 HWPX·XLSX·DOCX 외 (PPTX·이미지): 검증 전, tier-rules 참조. HWPX·XLSX·DOCX는 기본 티어 표의 해당 행으로 처리
-- ≤20p 소형 PDF (Read 시각 렌더링 = ground truth)
+- 손글씨 위주 스캔 문서 (충실 전사 critical: 4단계 파이프라인·Vision→Claude 캐스케이드·신원 필드·학생 답안 합본)
+- 시험지·고사 원안·평가지 (옵션 텍스트 critical) + ◇ 수식이 있는 시험지(PUA 밀도 ≥100: LlamaParse v2 유일 Primary)
+- has_text_layer: true인데 pdftotext만 한글을 못 뽑는 경우 (스캔으로 오판 금지)
+- ◇ ≤20p 소형 PDF (Read 시각 렌더링 = ground truth)
+- 비PDF 포맷 (PPTX·이미지·HWP 절차·호환성 매트릭스)
+- 의무기록·법률문서·계약서 (정확성 critical, 티어 무관 3자 교차: 「텍스트 레이어 없음」 절 말미)
 
 ### Step 3: 파서 실행
 
 선택된 파서만 병렬 실행. xlarge는 `timeout 600`, 그 외 `timeout 300`. `< /dev/null`로 대화형 프롬프트 방지.
+
+**실행 계약(2026-08-31)**: 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이다. 오류·빈 결과·검증 실패·부분 결과(Gemini 토큰 절단, Upstage 배치 누락, Mistral 쪽수 불일치, Vision 페이지 호출 실패)는 출력 없이 1로 끝나며, 실행 시작 시 같은 이름의 이전 출력을 먼저 지운다. 따라서 **Step 4로 넘어가기 전에 종료 코드와 출력 파일 존재를 함께 확인**한다. 종료 코드가 0이 아닌데 파일이 있다면 그 파일은 이번 실행의 것이 아니다.
+
+아래 예시는 bash(Git Bash·Linux·macOS) 기준이다. PowerShell에서는 `timeout`·`< /dev/null`·`&`·`wait`가 없으므로 `$null | python ...`으로 stdin을 닫고, 병렬은 `Start-Job`/`Start-Process -Wait` 또는 순차 실행으로 대체한다(macOS의 `timeout` 부재는 gotchas.md).
 
 ```bash
 # medium 티어 예
@@ -228,7 +243,7 @@ python <스킬루트>/scripts/generate_alt_text.py \
 python <스킬루트>/scripts/normalize_odl.py "<odl_output.md>" "<파일명>_fused_v3_opendataloader.md"
 ```
 
-자동 처리 항목 상세는 `references/postprocess.md` 참조.
+자동 처리 항목 상세는 `references/postprocess.md` 참조. 이미지 placeholder는 지우지 않고 `(이미지: alt)`/`(이미지)` 표식으로 남기므로, 위 LlamaParse 항목과 같은 기준(본문 다이어그램 보존·장식 제거)으로 Step 7에서 정리한다.
 
 ⚠️ **ODL Primary 채택 전 본문 숫자 검증 필수** (텍스트 레이어 있어도): 출판 임베딩 폰트의 글리프 매핑이 깨져 ODL이 본문 숫자/특수문자를 전부 누락하는 경우 존재. 본문 첫 문단 1~2개 숫자를 v2/Upstage와 즉시 대조. 누락 확인 시 ODL Primary 폐기. 상세는 `references/tier-rules.md`.
 
@@ -270,14 +285,15 @@ python <스킬루트>/scripts/compare_outputs.py "<primary.md>" "<upstage.md>"
 **원칙**: 최종 결과물(`_fused_v3_<파서조합>.md`)은 작업 폴더에 남기고, 그 전까지의 부산물(개별 파서 출력)은 `_work-docparse/` 하위 폴더로 격리한다. 폴더명은 출처(docparse) + 성격(work=중간 작업물)을 드러내며, hwpx-automation 스킬의 `_work-hwpx-automation/`과 접미사 규칙이 통일된다.
 
 1. `[파일명]_fused_v3_<파서조합>.md`로 작업 폴더에 저장(파서조합 명명 규칙은 Step 4 참조). **저장 직전, 파일명의 파서 목록이 실제로 내용이 반영된 파서와 일치하는지 확인한다**(Primary만 쓰고 보조 파서를 반영했는데 rename을 빠뜨리지 않도록).
-2. 대화에 요약 출력: 페이지 수·티어·사용 파서·실패/타임아웃 파서·퓨전 방식·자동화 교정 항목 수·LLM 교차 검증 결과·최종 줄 수·표 개수 + **Step 9의 두 결과**(추가 교차검증 실행/불필요와 근거, 규칙 문서 반영 내역).
+2. 대화에 요약 출력: 페이지 수·티어·사용 파서·실패/타임아웃 파서(종료 코드)·**적용된 보정 규칙 절 이름**(Step 2 목록 기준)·퓨전 방식·자동화 교정 항목 수·LLM 교차 검증 결과·최종 줄 수·표 개수 + **Step 9의 두 결과**(추가 교차검증 실행/불필요와 근거, 규칙 문서 반영 내역).
 3. 개별 파서 출력을 `_work-docparse/` 하위 폴더로 이동:
 
 ```bash
 mkdir -p "<파일 디렉토리>/_work-docparse"
 mv "<파일명>_llamaparse.md" "<파일명>_upstage.md" "<파일 디렉토리>/_work-docparse/"
-# 사용된 경우 _gemini.md, _mistral.md, _opendataloader.md, _hwpxlocal.md도 이동
-# (HWPX 티어: hwpx_local 단독이면 _hwpxlocal.md를 _fused_v3_hwpxlocal.md로 채택)
+# 사용된 경우 _gemini.md, _mistral.md, _opendataloader.md, _hwpxlocal.md, _pdfplumber.md,
+# _xlsxlocal.md, _docxlocal.md, _gvision.md, _corepin.md도 이동
+# (로컬 티어 단독 채택이면 그 출력을 _fused_v3_<토큰>.md로 채택)
 ```
 
 ### Step 9: 사후 절차: 추가 교차검증 검토 + 학습 반영 (생략 불가)

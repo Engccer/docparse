@@ -2,7 +2,7 @@
 
 ODL Primary 출력에서 자동화 가능한 항목을 일괄 처리:
 1. 페이지 구분자/코멘트 제거
-2. 이미지 placeholder 제거
+2. 이미지 placeholder → "(이미지: alt)" 존재 표식으로 축약(삭제 아님. figure 태그 줄만 제거)
 3. h6 heading → 번호 패턴 기반 계층화
 4. plain-text heading 승격 (standalone 번호 패턴)
 5. 챕터 표지 페이지 제거 (감지 시에만)
@@ -97,7 +97,8 @@ def normalize_odl(input_path, output_path=None):
         "h6_promoted": 0,
         "plaintext_promoted": 0,
         "cover_removed": 0,
-        "image_removed": 0,
+        "image_marked": 0,
+        "figure_tag_removed": 0,
         "blank_compressed": 0,
         "title_repeat_removed": 0,
     }
@@ -127,9 +128,24 @@ def normalize_odl(input_path, output_path=None):
             i += 1
             continue
 
-        # 3. 이미지 placeholder 제거
-        if re.match(r"^!\[", stripped) or re.match(r"^<fig(ure|caption)", stripped):
-            stats["image_removed"] += 1
+        # 3. 이미지 placeholder → 존재 표식으로 축약(삭제하지 않는다)
+        #    이미지가 있었다는 사실 자체가 스크린 리더 사용자에게 정보다. alt가 있으면
+        #    살리고, 없으면 "(이미지)"만 남긴다. 장식인지 도표인지는 Step 4/7에서 판단.
+        m_img = re.match(r"^!\[([^\]]*)\]\([^)]*\)\s*$", stripped)
+        if m_img:
+            alt = m_img.group(1).strip()
+            out.append(f"(이미지: {alt})\n" if alt else "(이미지)\n")
+            stats["image_marked"] += 1
+            i += 1
+            continue
+        m_cap = re.match(r"^<figcaption[^>]*>(.*?)</figcaption>\s*$", stripped)
+        if m_cap and m_cap.group(1).strip():
+            out.append(f"(이미지 캡션: {m_cap.group(1).strip()})\n")
+            stats["image_marked"] += 1
+            i += 1
+            continue
+        if re.match(r"^<fig(ure|caption)", stripped) or re.match(r"^</fig(ure|caption)", stripped):
+            stats["figure_tag_removed"] += 1
             i += 1
             continue
 
@@ -223,14 +239,14 @@ def main():
     if len(sys.argv) < 2:
         print("사용법: python normalize_odl.py <input_odl.md> [output.md]")
         print("  output 생략 시 [파일명]_fused_v3_opendataloader.md로 저장")
-        return
+        sys.exit(1)
 
     input_path = sys.argv[1]
     output_path = sys.argv[2] if len(sys.argv) > 2 else None
 
     if not os.path.exists(input_path):
         print(f"오류: 파일을 찾을 수 없습니다: {input_path}")
-        return
+        sys.exit(1)
 
     output_path, in_lines, out_lines, stats = normalize_odl(input_path, output_path)
 

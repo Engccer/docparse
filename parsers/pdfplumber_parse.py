@@ -20,8 +20,13 @@ PDF에 대한 서로 독립적인 두 관점이다. 단어 중심 좌표를 셀 
 열 경계 오인처럼 격자·좌표가 같은 상류 결함을 공유하는 오류는 잡지 못한다.
 코드를 전혀 공유하지 않는 PyMuPDF find_tables()로 같은 표를 다시 추출해 표
 개수·구조(행x열)·셀 내용을 대조한다(crosscheck_with_fitz). 두 독립 구현이
-같은 결과에 도달해야만 PASS다. PyMuPDF 미설치 환경에서는 교차 투표를
-생략하고 그 사실을 명시한다(단일 엔진 검증만으로 동작은 유지).
+같은 결과에 도달해야만 PASS다. PyMuPDF는 필수 의존성이다(2026-08-31): 종전에는
+미설치 시 교차 투표를 생략하고도 PASS를 냈는데, 그 PASS는 단일 엔진 자가검증만
+통과한 것이라 이 티어가 약속하는 "독립 2엔진 일치"가 아니다. 미설치면 출력을
+만들지 않고 설치를 안내한다(assess_document.py도 같은 패키지를 요구한다).
+
+종료 코드: 0 = PASS(출력 파일 생성), 1 = 오류·경고(출력 없음). 실행 시작 시
+같은 이름의 이전 출력을 지워, 실패한 실행 뒤에 옛 파일이 남지 않게 한다.
 
 --strategy text (opt-in, 2026-08-11 추가): 괘선 없는 정렬 표는 단어 좌표
 정렬로 열을 추정한다(pdfplumber text 전략). 이때 격자·좌표 두 관점이 같은
@@ -58,6 +63,13 @@ def get_output_filename(input_file):
     base_name = os.path.splitext(os.path.basename(input_file))[0]
     output_name = f"{base_name}_pdfplumber.md"
     return os.path.join(dir_path, output_name) if dir_path else output_name
+
+
+def clear_stale_output(output_file):
+    """같은 이름의 이전 출력이 있으면 지운다(실패한 실행 뒤 옛 파일 잔존 방지)."""
+    if os.path.exists(output_file):
+        os.remove(output_file)
+        print(f"기존 출력 제거: {output_file}")
 
 
 def _cell_md(value):
@@ -279,6 +291,7 @@ def _page_body(page, tables, grids, drop_empty_rows=False):
 
 
 def process_file(filename, strategy="lines"):
+    """PASS로 출력 파일을 만들었으면 True."""
     import pdfplumber
 
     print(f"입력 파일: {filename}")
@@ -286,10 +299,13 @@ def process_file(filename, strategy="lines"):
     if ext not in SUPPORTED_EXTENSIONS:
         print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
         print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
-        return
+        return False
     if not os.path.exists(filename):
         print(f"오류: 파일을 찾을 수 없습니다: {filename}")
-        return
+        return False
+
+    output_file = get_output_filename(filename)
+    clear_stale_output(output_file)
 
     if strategy == "text":
         print("추출 중... (pdfplumber text 전략: 괘선 없는 정렬 표 + 좌표 재배치 자가검증)")
@@ -343,24 +359,25 @@ def process_file(filename, strategy="lines"):
         else:
             print("경고: 괘선 표를 하나도 찾지 못했습니다. 이 문서는 Tier 0 대상이 아닙니다.")
             print("→ 스캔본이거나 괘선 없는 표일 수 있습니다. 기존 티어(assess_document.py 추천)를 쓰세요.")
-        return
+        return False
 
     print(f"페이지 {page_count} · 표 {total_tables}개 · 셀 {total_cells}개(내용 있는 셀 {total_nonempty})")
     print(f"자가검증(격자 추출 ↔ 좌표 재배치 양방향 대조): 셀 {total_checked}건")
 
     cross = crosscheck_with_fitz(filename, pages_tables, strategy)
     if cross is None:
-        cross_problems = []
-        print("[알림] PyMuPDF(fitz) 미가용: 독립 2엔진 교차 투표를 생략합니다 (pip install -U pymupdf)")
-    else:
-        cross_checked, cross_problems = cross
-        print(f"교차 투표(pdfplumber / PyMuPDF find_tables 독립 2엔진): 셀 {cross_checked}건 대조")
+        # 교차 투표 없는 PASS는 이 티어의 약속("독립 2엔진 일치")이 아니다.
+        print("오류: PyMuPDF(fitz)를 찾을 수 없어 독립 2엔진 교차 투표를 할 수 없습니다.")
+        print("설치 명령: pip install -U pymupdf")
+        print("→ 출력 파일을 만들지 않았습니다. 설치 후 재실행하거나 기존 티어로 승격하세요.")
+        return False
+    cross_checked, cross_problems = cross
+    print(f"교차 투표(pdfplumber / PyMuPDF find_tables 독립 2엔진): 셀 {cross_checked}건 대조")
 
     if all_problems or all_unassigned or merged_cells or cross_problems:
-        cross_part = "교차 투표 생략" if cross is None else f"교차 엔진 불일치 {len(cross_problems)}건"
         print(
             f"경고: 셀 불일치 {len(all_problems)}건 · 미배정 단어 {len(all_unassigned)}건"
-            f" · 병합 의심 셀 {merged_cells}건 · {cross_part}"
+            f" · 병합 의심 셀 {merged_cells}건 · 교차 엔진 불일치 {len(cross_problems)}건"
         )
         for page_no, ti, r, c, a, b in all_problems[:MAX_PROBLEM_SAMPLES]:
             print(f"  - p{page_no} 표{ti + 1} ({r},{c}): 격자='{a}' / 좌표='{b}'")
@@ -376,26 +393,24 @@ def process_file(filename, strategy="lines"):
         if len(cross_problems) > MAX_PROBLEM_SAMPLES:
             print(f"  ... 외 [교차] {len(cross_problems) - MAX_PROBLEM_SAMPLES}건")
         print("→ 자가검증 실패: 출력 파일을 만들지 않았습니다. 기존 티어(LlamaParse v2·Upstage)로 승격하세요.")
-        return
+        return False
 
-    output_file = get_output_filename(filename)
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("\n\n".join(s for s in sections if s) + "\n")
     print(f"출력 파일: {output_file}")
-    if cross is None:
-        print("=== PASS: 열 배정까지 완전 일치 (교차 투표 생략) ===")
-    else:
-        print("=== PASS: 열 배정과 독립 2엔진 교차 투표까지 완전 일치 ===")
+    print("=== PASS: 열 배정과 독립 2엔진 교차 투표까지 완전 일치 ===")
+    return True
 
 
 def main():
+    """반환값이 종료 코드다(0 성공 / 1 실패)."""
     try:
         import pdfplumber  # noqa: F401
     except ImportError as e:
         print("오류: pdfplumber 패키지를 찾을 수 없습니다.")
         print("설치 명령: pip install pdfplumber")
         print(f"상세: {e}")
-        return
+        return 1
 
     args = sys.argv[1:]
     strategy = "lines"
@@ -411,11 +426,10 @@ def main():
         i += 1
     if strategy not in ("lines", "text"):
         print(f"오류: 지원하지 않는 전략입니다: {strategy} (lines | text)")
-        return
+        return 1
 
     if positional:
-        process_file(positional[0], strategy)
-        return
+        return 0 if process_file(positional[0], strategy) else 1
 
     supported_files = sorted(
         f for f in os.listdir(".")
@@ -424,22 +438,24 @@ def main():
     if not supported_files:
         print("오류: 현재 디렉토리에 지원되는 PDF 파일이 없습니다.")
         print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
-        return
+        return 1
     if len(supported_files) == 1:
-        process_file(supported_files[0], strategy)
-        return
+        return 0 if process_file(supported_files[0], strategy) else 1
     print(f"PDF 파일 {len(supported_files)}개 발견:")
     for i, f in enumerate(supported_files, 1):
         print(f"  {i}. {f}")
     print()
+    all_ok = True
     for f in supported_files:
-        process_file(f, strategy)
+        all_ok = process_file(f, strategy) and all_ok
         print()
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
+    exit_code = 1
     try:
-        main()
+        exit_code = main()
     except Exception as e:
         print(f"\n오류 발생: {e}")
         print("\n상세 정보:")
@@ -452,3 +468,4 @@ if __name__ == "__main__":
             input("\nEnter를 눌러 종료...")
         except EOFError:
             pass
+    sys.exit(exit_code)

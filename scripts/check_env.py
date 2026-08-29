@@ -6,10 +6,15 @@
 설정해야 하는지 한눈에 확인한다. 키 발급 URL도 함께 안내한다.
 읽기 전용이며 아무것도 설치하거나 변경하지 않는다.
 
+점검 항목은 각 파서가 실행 시 실제로 요구하는 것과 같다(2026-08-31 정정):
+pdfplumber는 PyMuPDF가 없으면 출력을 만들지 않고, ODL은 Java 실행 파일이 필요하며,
+Google Vision은 표준 라이브러리(urllib)만 쓰고 PDF 렌더에 PyMuPDF를 쓴다.
+
 사용:  python scripts/check_env.py
 """
 import importlib.util
 import os
+import shutil
 import sys
 
 try:
@@ -17,48 +22,49 @@ try:
 except Exception:
     pass
 
-# 무료·로컬 파서 (API 키 불필요)
+# 무료·로컬 파서 (API 키 불필요). modules: 전부 있어야 사용 가능. binaries: PATH의 실행 파일.
 LOCAL = [
-    {"name": "hwpx_local", "module": "hwpx_tomd", "pip": "hwpx-tomd",
+    {"name": "hwpx_local", "modules": ["hwpx_tomd"], "pip": "hwpx-tomd",
      "note": "HWPX 전용·오프라인"},
-    {"name": "pdfplumber", "module": "pdfplumber", "pip": "pdfplumber",
-     "note": "괘선 표 PDF Tier 0·오프라인. 2엔진 교차 투표는 pymupdf 병용(미설치 시 생략)"},
-    {"name": "xlsx_local", "module": "openpyxl", "pip": "openpyxl",
+    {"name": "pdfplumber", "modules": ["pdfplumber", "fitz"], "pip": "pdfplumber pymupdf",
+     "note": "괘선 표 PDF Tier 0·오프라인. PyMuPDF 2엔진 교차 투표 필수"},
+    {"name": "xlsx_local", "modules": ["openpyxl"], "pip": "openpyxl",
      "note": "XLSX 전용·오프라인. 원시 XML 값 교차 검증 내장"},
-    {"name": "docx_local", "module": "docx", "pip": "python-docx",
+    {"name": "docx_local", "modules": ["docx"], "pip": "python-docx",
      "note": "DOCX 전용·오프라인. document.xml 전수 recall 검증 내장"},
-    {"name": "opendataloader", "module": "opendataloader_pdf", "pip": "opendataloader-pdf",
-     "note": "PDF 전용, 별도로 Java 런타임 필요"},
+    {"name": "opendataloader", "modules": ["opendataloader_pdf"], "pip": "opendataloader-pdf",
+     "binaries": ["java"],
+     "note": "PDF 전용, Java 런타임 필요(adoptium.net)"},
 ]
 
 # 클라우드 파서 (API 키 필요). keys: 만족해야 할 키 후보(하나라도 충족 시 사용 가능).
 #   "A+B" 형태는 A와 B를 모두 요구한다는 의미(예: GV_TOKEN+GV_PROJECT).
 CLOUD = [
-    {"name": "upstage", "module": "requests", "pip": "requests",
+    {"name": "upstage", "modules": ["requests"], "pip": "requests",
      "keys": ["UPSTAGE_API_KEY"], "url": "https://console.upstage.ai/",
      "note": "기준선·교차검증"},
-    {"name": "gemini", "module": "google.genai", "pip": "google-genai",
+    {"name": "gemini", "modules": ["google.genai"], "pip": "google-genai",
      "keys": ["GEMINI_API_KEY"], "url": "https://aistudio.google.com/apikey",
      "note": "small PDF Primary·alt text 생성"},
-    {"name": "llamaparse", "module": "llama_cloud", "pip": "llama-cloud",
+    {"name": "llamaparse", "modules": ["llama_cloud"], "pip": "llama-cloud",
      "keys": ["LLAMAPARSE_API_KEY"], "url": "https://cloud.llamaindex.ai/",
      "note": "medium 이상 PDF의 Primary"},
-    {"name": "mistral", "module": "mistralai", "pip": "mistralai",
+    {"name": "mistral", "modules": ["mistralai"], "pip": "mistralai",
      "keys": ["MISTRAL_API_KEY"], "url": "https://console.mistral.ai/",
      "note": "3자 교차검증·비한국어"},
-    {"name": "corepin", "module": "requests", "pip": "requests",
+    {"name": "corepin", "modules": ["requests"], "pip": "requests",
      "keys": ["COREPIN_API_KEY"], "url": "https://corepin.ai/",
      "note": "다포맷 단일 API"},
-    {"name": "gvision", "module": "requests", "pip": "requests",
+    {"name": "gvision", "modules": ["fitz"], "pip": "pymupdf",
      "keys": ["GOOGLE_VISION_API_KEY", "GV_TOKEN+GV_PROJECT"],
      "url": "https://console.cloud.google.com/apis/credentials",
-     "note": "손글씨 OCR(Vision API 활성화 필요)"},
+     "note": "손글씨 OCR(Vision API 활성화 필요). 호출은 표준 라이브러리, PDF 렌더에 PyMuPDF"},
 ]
 
 # 여러 파서·스크립트가 공유하는 의존성. 없으면 일부 기능만 제한된다.
 SHARED = [
     {"module": "fitz", "pip": "PyMuPDF",
-     "note": "PDF 페이지 진단·렌더(gvision)·크레딧 추정(llamaparse)·alt text"},
+     "note": "PDF 페이지 진단(assess_document)·pdfplumber 교차 투표·렌더(gvision)·크레딧 추정(llamaparse)·alt text"},
 ]
 
 
@@ -67,6 +73,13 @@ def installed(module):
         return importlib.util.find_spec(module) is not None
     except (ImportError, ModuleNotFoundError, ValueError):
         return False
+
+
+def missing_deps(p):
+    """없는 모듈·실행 파일 목록."""
+    out = [m for m in p.get("modules", []) if not installed(m)]
+    out += [f"{b}(실행 파일)" for b in p.get("binaries", []) if not shutil.which(b)]
+    return out
 
 
 def key_ok(keys):
@@ -91,28 +104,28 @@ def main():
 
     print("\n[무료·로컬 파서] (API 키 불필요)")
     for p in LOCAL:
-        if installed(p["module"]):
+        missing = missing_deps(p)
+        if not missing:
             print(f"  [O] {p['name']:<16} 사용 가능 · {p['note']}")
             usable += 1
         else:
-            print(f"  [설치] {p['name']:<14} pip install {p['pip']}  ({p['note']})")
+            print(f"  [설치] {p['name']:<14} pip install {p['pip']}  (누락: {', '.join(missing)}; {p['note']})")
             pkg_needed += 1
 
     print("\n[클라우드 파서] (API 키 필요)")
     for p in CLOUD:
-        has_pkg = installed(p["module"])
+        missing = missing_deps(p)
         has_key, which = key_ok(p["keys"])
-        if has_pkg and has_key:
+        shown = " 또는 ".join(p["keys"])
+        if not missing and has_key:
             print(f"  [O] {p['name']:<16} 사용 가능 ({which}) · {p['note']}")
             usable += 1
-        elif has_pkg and not has_key:
-            shown = " 또는 ".join(p["keys"])
+        elif not missing and not has_key:
             print(f"  [키설정] {p['name']:<13} 패키지 OK, 키 미설정: {shown}")
             print(f"          키 발급: {p['url']}")
             key_needed += 1
         else:
-            shown = " 또는 ".join(p["keys"])
-            print(f"  [설치] {p['name']:<14} pip install {p['pip']} · 키 미설정: {shown}")
+            print(f"  [설치] {p['name']:<14} pip install {p['pip']} (누락: {', '.join(missing)}) · 키 {'OK' if has_key else '미설정: ' + shown}")
             print(f"          키 발급: {p['url']}")
             pkg_needed += 1
 

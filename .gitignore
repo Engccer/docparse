@@ -26,6 +26,10 @@ drafts/
 *_hwpxlocal.md
 *_corepin.md
 *_gvision.md
+*_pdfplumber.md
+*_xlsxlocal.md
+*_docxlocal.md
+*_with_alt.md
 
 # OS 잡파일
 .DS_Store

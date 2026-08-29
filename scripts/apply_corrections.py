@@ -16,6 +16,12 @@ CSV 열(UTF-8 BOM, 첫 줄 머리글):
 
 검증: 처리=적용 행은 원문이 입력에 1회 이상 있어야 하며(0회면 오류 종료), 치환 후 원문이
 남아 있지 않아야 한다. 치환 건수는 표준출력에 행별로 보고한다.
+
+치환 범위(2026-08-31): 입력 마크다운에 `hwpx_enrich.py`가 넣은 쪽 주석(`<!-- p.N ... -->`)이
+있고 행의 「원본 쪽」이 채워져 있으면 **그 쪽 구간 안에서만** 치환한다(종전에는 쪽을 읽고도
+문서 전체를 바꿔, 5쪽의 오인식 `2025`를 고치려다 다른 쪽의 진짜 `2025`까지 바꿨다).
+쪽 주석이 없거나 원본 쪽이 비어 있으면 전역 치환이며, 그때 원문이 2회 이상 맞으면
+「표기 정규화」 유형이 아닌 한 경고를 낸다.
 """
 from __future__ import annotations
 
@@ -27,6 +33,31 @@ import subprocess
 import sys
 
 COLS = ["문서", "원본 쪽", "원문", "수정문", "유형", "처리", "근거", "비고"]
+PAGE_MARK = re.compile(r"<!--\s*p\.(\d+)\b[^>]*-->")
+
+
+def split_by_page(text: str):
+    """쪽 주석 기준 구간 목록 [(쪽 번호 또는 None, 구간 문자열), ...]. 주석이 없으면 None."""
+    marks = list(PAGE_MARK.finditer(text))
+    if not marks:
+        return None
+    segments = [(None, text[:marks[0].start()])]
+    for k, m in enumerate(marks):
+        end = marks[k + 1].start() if k + 1 < len(marks) else len(text)
+        segments.append((int(m.group(1)), text[m.start():end]))
+    return segments
+
+
+def replace_in_pages(segments, pages_wanted, src, dst):
+    """지정 쪽 구간에서만 치환. (새 구간 목록, 치환 횟수)"""
+    count = 0
+    out = []
+    for page, seg in segments:
+        if page in pages_wanted and src in seg:
+            count += seg.count(src)
+            seg = seg.replace(src, dst)
+        out.append((page, seg))
+    return out, count
 
 
 def load_pages(pdf: str):
@@ -57,8 +88,10 @@ def main():
         sys.exit(f"CSV 열 누락: {missing}")
 
     text = open(args.inp, encoding="utf-8").read()
+    segments = split_by_page(text)
     pages = load_pages(args.pdf) if args.pdf else None
     errors = []
+    warnings = []
     applied = 0
     for r in rows:
         if r["문서"] != args.doc:
@@ -76,6 +109,23 @@ def main():
         if cnt == 0:
             errors.append(f"원문 없음: {src!r}")
             continue
+        # `pdf7`은 인쇄 쪽 번호가 없는 쪽의 PDF 순번이라 <!-- p.N --> 라벨과 다른 좌표계다.
+        # 인쇄 쪽 번호(순수 숫자)만 범위 지정에 쓰고, pdf 접두 값은 전역 경로로 보낸다.
+        page_field = r["원본 쪽"] or ""
+        wanted = {int(n) for n in re.findall(r"(?<![A-Za-z])\d+", page_field)} - {
+            int(n) for n in re.findall(r"pdf(\d+)", page_field)
+        }
+        if segments is not None and wanted:
+            segments, n_scoped = replace_in_pages(segments, wanted, src, dst)
+            text = "".join(seg for _, seg in segments)
+            if n_scoped == 0:
+                errors.append(f"지정 쪽 {sorted(wanted)}에 원문 없음(본문 다른 곳 {cnt}회): {src!r}")
+                continue
+            applied += n_scoped
+            print(f"[적용·쪽 {sorted(wanted)}] {r['유형']} | {src!r} → {dst!r} ×{n_scoped}")
+            continue
+        if cnt > 1 and r["유형"].strip() != "표기 정규화":
+            warnings.append(f"전역 치환 {cnt}회({r['유형']}): {src!r} — 쪽 주석이 없거나 원본 쪽이 비어 범위를 좁히지 못함")
         text = text.replace(src, dst)
         applied += cnt
         print(f"[적용] {r['유형']} | {src!r} → {dst!r} ×{cnt}")
@@ -83,6 +133,8 @@ def main():
             continue
         if src in text:
             errors.append(f"치환 후 잔존: {src!r}")
+    for w in warnings:
+        print("경고:", w, file=sys.stderr)
     if errors:
         for e in errors:
             print("오류:", e, file=sys.stderr)

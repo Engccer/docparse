@@ -1,16 +1,27 @@
+"""Gemini 문서 파서 (docparse).
+
+  python gemini_parse.py "<파일.pdf|.jpg|.png>" [--thinking]   → <파일>_gemini.md
+
+실패 계약(2026-08-31): 응답 text가 None이거나 finish_reason이 MAX_TOKENS(출력이
+잘림)면 출력 파일을 만들지 않고 종료 코드 1. 종전에는 잘린 결과를 경고만 찍고
+완료본으로 저장해, 뒷부분이 없는 파일이 퓨전에 편입될 수 있었다. 실행 시작 시
+같은 이름의 이전 출력을 지운다.
+"""
 import os
 import sys
 import traceback
 
+
 def main():
+    """반환값이 종료 코드다(0 성공 / 1 실패)."""
     try:
         from google import genai
         from google.genai import types
     except ImportError as e:
-        print(f"오류: google-genai 패키지를 찾을 수 없습니다.")
-        print(f"설치 명령: pip install google-genai")
+        print("오류: google-genai 패키지를 찾을 수 없습니다.")
+        print("설치 명령: pip install google-genai")
         print(f"상세: {e}")
-        return
+        return 1
 
     # API 키 설정
     try:
@@ -18,7 +29,7 @@ def main():
     except KeyError:
         print("오류: GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
         print("설정 명령: export GEMINI_API_KEY=\"your-api-key\"  (Windows: setx GEMINI_API_KEY \"your-api-key\")")
-        return
+        return 1
 
     client = genai.Client(api_key=api_key)
 
@@ -30,6 +41,10 @@ def main():
         '.png': 'image/png'
     }
 
+    # 명령줄 인수 파싱 (--thinking 옵션 분리)
+    use_thinking = "--thinking" in sys.argv
+    args = [a for a in sys.argv[1:] if a != "--thinking"]
+
     def get_output_filename(input_file):
         """입력 파일 경로를 기반으로 출력 파일 경로 생성"""
         dir_path = os.path.dirname(input_file)
@@ -39,12 +54,19 @@ def main():
             return os.path.join(dir_path, output_name)
         return output_name
 
+    def clear_stale_output(output_file):
+        if os.path.exists(output_file):
+            os.remove(output_file)
+            print(f"기존 출력 제거: {output_file}")
+
     def process_file(input_file):
-        """단일 파일 문서 파싱"""
+        """단일 파일 문서 파싱. 출력 파일을 만들었으면 True."""
         ext = os.path.splitext(input_file)[1].lower()
         mime_type = MIME_TYPES[ext]
 
         print(f"입력 파일: {input_file} ({mime_type})")
+        output_file = get_output_filename(input_file)
+        clear_stale_output(output_file)
 
         # 파일 크기 확인
         file_size = os.path.getsize(input_file)
@@ -108,24 +130,23 @@ def main():
         if markdown_content is None:
             fr = response.candidates[0].finish_reason if response.candidates else "?"
             print(f"오류: 텍스트 추출 실패 (finish_reason={fr}). 출력 파일을 생성하지 않습니다.")
-            return
-        # 장문 truncation 경고
+            return False
+        # 장문 truncation: 잘린 결과는 완료본이 아니다(뒷부분이 조용히 빠진 채 퓨전에 편입 방지)
         if response.candidates and "MAX_TOKENS" in str(response.candidates[0].finish_reason):
-            print("경고: 출력이 max_output_tokens(65536)에 도달해 잘렸을 수 있습니다. "
-                  "장문 문서는 Gemini 부적합 — LlamaParse v2/Mistral를 Primary로 쓰세요.")
-
-        # 결과 저장
-        output_file = get_output_filename(input_file)
+            print("오류: 출력이 max_output_tokens(65536)에 도달해 잘렸습니다. 출력 파일을 만들지 않았습니다.")
+            print("  장문 문서는 Gemini 부적합 — LlamaParse v2/Mistral를 Primary로 쓰세요.")
+            return False
+        if not markdown_content.strip():
+            print("오류: 응답 본문이 비어 있습니다. 출력 파일을 만들지 않았습니다.")
+            return False
 
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(markdown_content)
 
         print(f"변환 완료! {len(markdown_content)}글자가 저장되었습니다.")
         print(f"출력 파일: {output_file}")
+        return True
 
-    # 명령줄 인수 파싱 (--thinking 옵션 분리)
-    use_thinking = "--thinking" in sys.argv
-    args = [a for a in sys.argv[1:] if a != "--thinking"]
     print(f"인수: {sys.argv} (thinking={'ON' if use_thinking else 'OFF'})")
 
     if len(args) > 0:
@@ -136,54 +157,53 @@ def main():
         if ext not in MIME_TYPES:
             print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
             print(f"지원 형식: {', '.join(MIME_TYPES.keys())}")
-            return
+            return 1
         if not os.path.exists(input_file):
             print(f"오류: 파일을 찾을 수 없습니다: {input_file}")
-            return
-        process_file(input_file)
-    else:
-        # 현재 디렉토리에서 지원되는 파일 찾기
-        supported_files = sorted([f for f in os.listdir('.') if os.path.isfile(f) and os.path.splitext(f)[1].lower() in MIME_TYPES])
-        if not supported_files:
-            print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
-            print(f"지원 형식: {', '.join(MIME_TYPES.keys())}")
-            return
-        if len(supported_files) == 1:
-            process_file(supported_files[0])
-        else:
-            print(f"지원되는 파일 {len(supported_files)}개 발견:")
-            for i, f in enumerate(supported_files, 1):
-                print(f"  {i}. {f}")
-            print()
-            print("1) 하나씩 선택하여 변환")
-            print("2) 모두 변환")
-            choice = input("선택 (1/2): ").strip()
-            print()
+            return 1
+        return 0 if process_file(input_file) else 1
 
-            if choice == "2":
-                for i, f in enumerate(supported_files, 1):
-                    print(f"[{i}/{len(supported_files)}] {f}")
-                    try:
-                        process_file(f)
-                    except Exception as e:
-                        print(f"오류 발생: {e}")
-                    print()
-            else:
-                for i, f in enumerate(supported_files, 1):
-                    yn = input(f"[{i}/{len(supported_files)}] {f} 변환? (Y/N): ").strip().upper()
-                    if yn == "Y":
-                        try:
-                            process_file(f)
-                        except Exception as e:
-                            print(f"오류 발생: {e}")
-                    else:
-                        print("건너뜀.")
-                    print()
+    # 현재 디렉토리에서 지원되는 파일 찾기
+    supported_files = sorted([f for f in os.listdir('.') if os.path.isfile(f) and os.path.splitext(f)[1].lower() in MIME_TYPES])
+    if not supported_files:
+        print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
+        print(f"지원 형식: {', '.join(MIME_TYPES.keys())}")
+        return 1
+    if len(supported_files) == 1:
+        return 0 if process_file(supported_files[0]) else 1
+
+    print(f"지원되는 파일 {len(supported_files)}개 발견:")
+    for i, f in enumerate(supported_files, 1):
+        print(f"  {i}. {f}")
+    print()
+    print("1) 하나씩 선택하여 변환")
+    print("2) 모두 변환")
+    choice = input("선택 (1/2): ").strip()
+    print()
+
+    all_ok = True
+    for i, f in enumerate(supported_files, 1):
+        if choice != "2":
+            yn = input(f"[{i}/{len(supported_files)}] {f} 변환? (Y/N): ").strip().upper()
+            if yn != "Y":
+                print("건너뜀.")
+                print()
+                continue
+        else:
+            print(f"[{i}/{len(supported_files)}] {f}")
+        try:
+            all_ok = process_file(f) and all_ok
+        except Exception as e:
+            print(f"오류 발생: {e}")
+            all_ok = False
+        print()
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
+    exit_code = 1
     try:
-        main()
+        exit_code = main()
     except Exception as e:
         print(f"\n오류 발생: {e}")
         print("\n상세 정보:")
@@ -197,3 +217,4 @@ if __name__ == "__main__":
             input("\nEnter를 눌러 종료...")
         except EOFError:
             pass
+    sys.exit(exit_code)

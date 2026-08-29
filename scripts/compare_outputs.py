@@ -10,8 +10,11 @@ Output (stdout, JSON):
         "gaps": [
             { "heading": "## 3. 단계별 도입 절차", "in_primary": false, "in": ["upstage", "llamaparse"] }
         ],
-        "recommendation": "primary_only" | "patch_needed" | "full_fusion"
+        "recommendation": "primary_only" | "patch_needed" | "full_fusion",
+        "reasons": ["..."]     # 추천 근거(표 개수·실제 글자 수·heading 갭·줄 수)
     }
+
+종료 코드: Primary 파일이 없으면 1.
 """
 
 import json
@@ -51,11 +54,15 @@ def analyze_md(file_path: str) -> dict:
         else:
             in_table = False
 
+    # 표 기호·공백을 뺀 실제 글자 수(빈 표 뼈대가 글자 수를 채우는 함정 대응, gotchas.md)
+    content_chars = len(re.sub(r"[\s|\-:#>*`_<!\[\]()]", "", content))
+
     return {
         "file": os.path.basename(file_path),
         "exists": True,
         "lines": len(lines),
         "chars": len(content),
+        "content_chars": content_chars,
         "headings": len(headings),
         "heading_titles": [h["title"] for h in headings],
         "tables": table_count,
@@ -89,29 +96,44 @@ def find_gaps(primary: dict, secondaries: list[dict]) -> list[dict]:
     return gaps
 
 
-def recommend(primary: dict, secondaries: list[dict], gaps: list[dict]) -> str:
-    """퓨전 전략 추천."""
+def recommend(primary: dict, secondaries: list[dict], gaps: list[dict]) -> tuple[str, list[str]]:
+    """퓨전 전략 추천과 그 근거 목록.
+
+    표 개수·실제 글자 수를 판정에 쓴다(2026-08-31). 종전에는 heading 갭과 줄 수
+    130%만 봐서, Primary에서 표 하나가 통째로 빠져도 줄 수 차이가 작으면
+    primary_only가 나왔다. 여기서 잡히지 않는 누락(같은 개수의 표 안에서 행이
+    빠진 경우)은 Step 5 셀 위치 비교와 Step 6b 구간 대조가 담당한다.
+    """
     if not primary.get("exists"):
-        return "full_fusion"
+        return "full_fusion", ["Primary 파일 없음"]
 
     valid_secondaries = [s for s in secondaries if s.get("exists")]
     if not valid_secondaries:
-        return "primary_only"
+        return "primary_only", ["보조 파서 출력 없음(교차 검증 불가)"]
 
+    reasons = []
     # 갭이 전체 heading의 10% 이상이면 full fusion
     if primary["headings"] > 0 and len(gaps) > primary["headings"] * 0.1:
-        return "full_fusion"
+        reasons.append(f"heading 갭 {len(gaps)}건 > Primary heading {primary['headings']}의 10%")
+        return "full_fusion", reasons
 
-    # 갭이 있으면 patch
     if gaps:
-        return "patch_needed"
+        reasons.append(f"heading 갭 {len(gaps)}건")
 
-    # 줄 수 차이가 30% 이상이면 patch (content gap 가능성)
     for sec in valid_secondaries:
+        if sec["tables"] > primary["tables"]:
+            reasons.append(f"{sec['file']} 표 {sec['tables']}개 > Primary {primary['tables']}개")
+        if sec["content_chars"] > primary["content_chars"] * 1.15:
+            reasons.append(
+                f"{sec['file']} 실제 글자 {sec['content_chars']:,} > Primary {primary['content_chars']:,}의 115%"
+            )
+        # 줄 수 차이가 30% 이상이면 patch (content gap 가능성)
         if sec["lines"] > primary["lines"] * 1.3:
-            return "patch_needed"
+            reasons.append(f"{sec['file']} 줄 수 {sec['lines']} > Primary {primary['lines']}의 130%")
 
-    return "primary_only"
+    if reasons:
+        return "patch_needed", reasons
+    return "primary_only", ["heading·표 개수·글자 수·줄 수 모두 Primary가 열세 아님"]
 
 
 if __name__ == "__main__":
@@ -125,7 +147,7 @@ if __name__ == "__main__":
     primary = analyze_md(primary_path)
     secondaries = [analyze_md(p) for p in secondary_paths]
     gaps = find_gaps(primary, secondaries)
-    rec = recommend(primary, secondaries, gaps)
+    rec, reasons = recommend(primary, secondaries, gaps)
 
     # heading_titles는 출력에서 제외 (너무 김)
     primary_out = {k: v for k, v in primary.items() if k != "heading_titles"}
@@ -137,6 +159,8 @@ if __name__ == "__main__":
         "gap_count": len(gaps),
         "gaps_sample": gaps[:10],  # 처음 10개만
         "recommendation": rec,
+        "reasons": reasons,
     }
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    sys.exit(0 if primary.get("exists") else 1)

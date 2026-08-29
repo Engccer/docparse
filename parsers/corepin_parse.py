@@ -1,16 +1,25 @@
+"""Corepin 통합 문서 파서 (docparse).
+
+  python corepin_parse.py "<파일>"   → <파일>_corepin.md
+
+실패 계약(2026-08-31): API 오류·빈 결과면 출력 파일을 만들지 않고 종료 코드 1.
+실행 시작 시 같은 이름의 이전 출력을 지운다.
+"""
 import os
 import sys
 import json
 import traceback
 
+
 def main():
+    """반환값이 종료 코드다(0 성공 / 1 실패)."""
     try:
         import requests
     except ImportError as e:
-        print(f"오류: requests 패키지를 찾을 수 없습니다.")
-        print(f"설치 명령: pip install requests")
+        print("오류: requests 패키지를 찾을 수 없습니다.")
+        print("설치 명령: pip install requests")
         print(f"상세: {e}")
-        return
+        return 1
 
     # API 키 설정
     try:
@@ -18,7 +27,7 @@ def main():
     except KeyError:
         print("오류: COREPIN_API_KEY 환경 변수가 설정되지 않았습니다.")
         print("설정 명령: export COREPIN_API_KEY=\"sk_live_...\"  (Windows: setx COREPIN_API_KEY \"sk_live_...\")")
-        return
+        return 1
 
     BASE_URL = "https://api.corepin.ai"
 
@@ -39,6 +48,11 @@ def main():
         if dir_path:
             return os.path.join(dir_path, output_name)
         return output_name
+
+    def clear_stale_output(output_file):
+        if os.path.exists(output_file):
+            os.remove(output_file)
+            print(f"기존 출력 제거: {output_file}")
 
     def save_markdown(filename, markdown_content, meta=None):
         output_file = get_output_filename(filename)
@@ -66,8 +80,9 @@ def main():
             return f"{response.status_code} - {response.text}"
 
     def process_file(filename):
-        """단일 파일 문서 파싱 (/v1/doc/parse, output_format=markdown)"""
+        """단일 파일 문서 파싱 (/v1/doc/parse, output_format=markdown). 출력 파일을 만들었으면 True."""
         print(f"입력 파일: {filename}")
+        clear_stale_output(get_output_filename(filename))
         print("변환 중... (Corepin 통합 문서 파서, ocr_fallback ON)")
 
         url = f"{BASE_URL}/v1/doc/parse"
@@ -80,19 +95,20 @@ def main():
             }
             response = requests.post(url, headers=headers, files=files, data=data, timeout=120)
 
-        if response.status_code == 200:
-            result = response.json()
-            # 표 감지 시 자동 정밀 모드 (추가 비용 없음)
-            if result.get("auto_escalated"):
-                print("표 감지 → 자동 정밀 모드 적용됨")
-            markdown_content = result.get("markdown") or result.get("text", "")
-            if markdown_content:
-                save_markdown(filename, markdown_content, result.get("meta"))
-            else:
-                print("오류: Markdown 내용을 찾을 수 없습니다.")
-                print(f"응답: {result}")
-        else:
+        if response.status_code != 200:
             print(f"Corepin API 오류: {parse_error(response)}")
+            return False
+        result = response.json()
+        # 표 감지 시 자동 정밀 모드 (추가 비용 없음)
+        if result.get("auto_escalated"):
+            print("표 감지 → 자동 정밀 모드 적용됨")
+        markdown_content = result.get("markdown") or result.get("text", "")
+        if not markdown_content or not markdown_content.strip():
+            print("오류: Markdown 내용이 비어 있습니다. 출력 파일을 만들지 않았습니다.")
+            print(f"응답: {str(result)[:300]}")
+            return False
+        save_markdown(filename, markdown_content, result.get("meta"))
+        return True
 
     # 명령줄 인수로 파일 경로 받기
     if len(sys.argv) > 1:
@@ -101,54 +117,53 @@ def main():
         if ext not in SUPPORTED_EXTENSIONS:
             print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
             print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
-            return
+            return 1
         if not os.path.exists(filename):
             print(f"오류: 파일을 찾을 수 없습니다: {filename}")
-            return
-        process_file(filename)
-    else:
-        # 현재 디렉토리에서 지원되는 파일 찾기
-        supported_files = sorted([f for f in os.listdir('.') if os.path.isfile(f) and os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS])
-        if not supported_files:
-            print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
-            print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
-            return
-        if len(supported_files) == 1:
-            process_file(supported_files[0])
-        else:
-            print(f"지원되는 파일 {len(supported_files)}개 발견:")
-            for i, f in enumerate(supported_files, 1):
-                print(f"  {i}. {f}")
-            print()
-            print("1) 하나씩 선택하여 변환")
-            print("2) 모두 변환")
-            choice = input("선택 (1/2): ").strip()
-            print()
+            return 1
+        return 0 if process_file(filename) else 1
 
-            if choice == "2":
-                for i, f in enumerate(supported_files, 1):
-                    print(f"[{i}/{len(supported_files)}] {f}")
-                    try:
-                        process_file(f)
-                    except Exception as e:
-                        print(f"오류 발생: {e}")
-                    print()
-            else:
-                for i, f in enumerate(supported_files, 1):
-                    yn = input(f"[{i}/{len(supported_files)}] {f} 변환? (Y/N): ").strip().upper()
-                    if yn == "Y":
-                        try:
-                            process_file(f)
-                        except Exception as e:
-                            print(f"오류 발생: {e}")
-                    else:
-                        print("건너뜀.")
-                    print()
+    # 현재 디렉토리에서 지원되는 파일 찾기
+    supported_files = sorted([f for f in os.listdir('.') if os.path.isfile(f) and os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS])
+    if not supported_files:
+        print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
+        print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
+        return 1
+    if len(supported_files) == 1:
+        return 0 if process_file(supported_files[0]) else 1
+
+    print(f"지원되는 파일 {len(supported_files)}개 발견:")
+    for i, f in enumerate(supported_files, 1):
+        print(f"  {i}. {f}")
+    print()
+    print("1) 하나씩 선택하여 변환")
+    print("2) 모두 변환")
+    choice = input("선택 (1/2): ").strip()
+    print()
+
+    all_ok = True
+    for i, f in enumerate(supported_files, 1):
+        if choice != "2":
+            yn = input(f"[{i}/{len(supported_files)}] {f} 변환? (Y/N): ").strip().upper()
+            if yn != "Y":
+                print("건너뜀.")
+                print()
+                continue
+        else:
+            print(f"[{i}/{len(supported_files)}] {f}")
+        try:
+            all_ok = process_file(f) and all_ok
+        except Exception as e:
+            print(f"오류 발생: {e}")
+            all_ok = False
+        print()
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
+    exit_code = 1
     try:
-        main()
+        exit_code = main()
     except Exception as e:
         print(f"\n오류 발생: {e}")
         print("\n상세 정보:")
@@ -162,3 +177,4 @@ if __name__ == "__main__":
             input("\nEnter를 눌러 종료...")
         except EOFError:
             pass
+    sys.exit(exit_code)

@@ -22,6 +22,15 @@ si 상속 해석이 필요해 검증하지 않는다).
 한계: 차트·이미지 안의 텍스트는 범위 밖(존재 시 경고, 출력은 유지 — hwpx_local
 과 동일 정책). xlsm(매크로)·암호화 파일 미지원. 셀 서식(색·테두리)은 데이터가
 아니므로 다루지 않는다.
+
+셀 밖 텍스트(2026-08-31): 두 검증 경로가 모두 셀 값만 보므로, 별도 XML에 저장되는
+텍스트는 대조로 잡히지 않는다. ① 도형·텍스트박스(xl/drawings/*.xml의 a:t)는 시트에
+보이는 본문이므로 존재 시 **거부**한다(docx_local의 텍스트박스 거부와 같은 정책).
+② 셀 주석·메모(xl/comments*.xml, xl/threadedComments/)는 본문이 아니므로 출력에
+넣지 않되 **개수를 고지**한다(docx_local의 검토 메모 고지와 같은 정책).
+
+종료 코드: 0 = PASS(출력 파일 생성), 1 = 오류·거부(출력 없음). 실행 시작 시
+같은 이름의 이전 출력을 지운다.
 """
 import os
 import sys
@@ -43,6 +52,7 @@ MAX_PROBLEM_SAMPLES = 10
 NS_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 NS_DOCREL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 NS_PKGREL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+NS_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 
 
 def get_output_filename(input_file):
@@ -51,6 +61,50 @@ def get_output_filename(input_file):
     base_name = os.path.splitext(os.path.basename(input_file))[0]
     output_name = f"{base_name}_xlsxlocal.md"
     return os.path.join(dir_path, output_name) if dir_path else output_name
+
+
+def clear_stale_output(output_file):
+    """같은 이름의 이전 출력이 있으면 지운다(실패한 실행 뒤 옛 파일 잔존 방지)."""
+    if os.path.exists(output_file):
+        os.remove(output_file)
+        print(f"기존 출력 제거: {output_file}")
+
+
+def scan_offcell_text(zf, names):
+    """셀 밖 텍스트 탐지: (도형 텍스트 샘플 목록, 주석 개수).
+
+    도형·텍스트박스 텍스트는 xl/drawings/drawingN.xml의 a:t에 있다(차트 파트
+    xl/charts/는 별도 경고 대상이라 제외). 주석은 xl/comments*.xml의 t 요소와
+    xl/threadedComments/*.xml의 threadedComment 요소를 센다.
+    """
+    shape_texts = []
+    for n in names:
+        if not (n.startswith("xl/drawings/") and n.endswith(".xml")):
+            continue
+        try:
+            root = ET.fromstring(zf.read(n))
+        except ET.ParseError:
+            continue
+        for t in root.iter(f"{NS_A}t"):
+            if t.text and t.text.strip():
+                shape_texts.append(t.text.strip())
+    comments = 0
+    for n in names:
+        base = os.path.basename(n).lower()
+        # Excel은 xl/comments1.xml, openpyxl은 xl/comments/comment1.xml로 쓴다. 둘 다 잡는다.
+        if n.startswith("xl/") and "comment" in base and n.endswith(".xml") and "threaded" not in n:
+            try:
+                root = ET.fromstring(zf.read(n))
+            except ET.ParseError:
+                continue
+            comments += sum(1 for _ in root.iter(f"{NS_MAIN}comment"))
+        elif n.startswith("xl/threadedComments/") and n.endswith(".xml"):
+            try:
+                root = ET.fromstring(zf.read(n))
+            except ET.ParseError:
+                continue
+            comments += sum(1 for el in root.iter() if el.tag.endswith("}threadedComment"))
+    return shape_texts, comments
 
 
 def _comparable(value, epoch):
@@ -241,6 +295,7 @@ def _used_bounds(ws):
 
 
 def process_file(filename):
+    """PASS로 출력 파일을 만들었으면 True."""
     import openpyxl
     from openpyxl.utils import column_index_from_string, get_column_letter
 
@@ -253,10 +308,13 @@ def process_file(filename):
         elif ext == ".xlsm":
             print("  매크로 포함 XLSM은 XLSX로 저장 후 입력하세요.")
         print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
-        return
+        return False
     if not os.path.exists(filename):
         print(f"오류: 파일을 찾을 수 없습니다: {filename}")
-        return
+        return False
+
+    output_file = get_output_filename(filename)
+    clear_stale_output(output_file)
 
     print("추출 중... (openpyxl 명시 데이터 + 원시 XML 독립 대조)")
     try:
@@ -265,7 +323,7 @@ def process_file(filename):
     except Exception as e:
         print(f"경고: openpyxl이 통합 문서를 읽지 못했습니다: {e}")
         print("→ 차트시트·특수 구조 가능성. 출력 파일을 만들지 않았습니다. 기존 티어(Upstage·LlamaParse)로 승격하세요.")
-        return
+        return False
 
     sections = []
     total_cells = 0
@@ -350,6 +408,7 @@ def process_file(filename):
 
     with zipfile.ZipFile(filename) as zf:
         names = zf.namelist()
+        shape_texts, comment_count = scan_offcell_text(zf, names)
     media = sum(1 for n in names if n.startswith("xl/media/"))
     charts = sum(1 for n in names if n.startswith("xl/charts/chart"))
 
@@ -365,39 +424,47 @@ def process_file(filename):
     checked, problems = crosscheck_with_rawxml(filename, sheets_values)
     print(f"교차 검증(openpyxl / 원시 XML 독립 해석): 값 {checked}건 대조")
 
+    if shape_texts:
+        sample = " / ".join(t[:30] for t in shape_texts[:5])
+        problems.append(
+            f"도형·텍스트박스 텍스트 {len(shape_texts)}건(셀 밖, 두 검증 경로 모두 범위 밖): {sample}"
+        )
+
     if problems:
-        print(f"경고: 교차 검증 불일치 {len(problems)}건")
+        print(f"경고: 검증 문제 {len(problems)}건")
         for line in problems[:MAX_PROBLEM_SAMPLES]:
             print(f"  - {line}")
         if len(problems) > MAX_PROBLEM_SAMPLES:
             print(f"  ... 외 {len(problems) - MAX_PROBLEM_SAMPLES}건")
         print("→ 검증 실패: 출력 파일을 만들지 않았습니다. 기존 티어(Upstage·LlamaParse)로 승격하세요.")
-        return
+        return False
 
+    if comment_count:
+        print(f"[알림] 셀 주석·메모 {comment_count}건이 있습니다. 셀 값이 아니므로 출력에 포함하지 않았습니다.")
     if media or charts:
         print(f"경고: 이미지 {media}개 · 차트 {charts}개 존재. 그 안의 텍스트는 추출 범위 밖입니다.")
         print("  이미지 내 텍스트가 중요하면 Upstage(upstage_parse.py)로 교차검증하세요.")
 
-    output_file = get_output_filename(filename)
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("\n\n".join(s for s in sections if s) + "\n")
     print(f"출력 파일: {output_file}")
     print("=== PASS: 원시 XML 독립 대조까지 완전 일치 ===")
+    return True
 
 
 def main():
+    """반환값이 종료 코드다(0 성공 / 1 실패)."""
     try:
         import openpyxl  # noqa: F401
     except ImportError as e:
         print("오류: openpyxl 패키지를 찾을 수 없습니다.")
         print("설치 명령: pip install openpyxl")
         print(f"상세: {e}")
-        return
+        return 1
 
     positional = [a for a in sys.argv[1:] if not a.startswith("--")]
     if positional:
-        process_file(positional[0])
-        return
+        return 0 if process_file(positional[0]) else 1
 
     supported_files = sorted(
         f for f in os.listdir(".")
@@ -406,22 +473,24 @@ def main():
     if not supported_files:
         print("오류: 현재 디렉토리에 지원되는 XLSX 파일이 없습니다.")
         print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
-        return
+        return 1
     if len(supported_files) == 1:
-        process_file(supported_files[0])
-        return
+        return 0 if process_file(supported_files[0]) else 1
     print(f"XLSX 파일 {len(supported_files)}개 발견:")
     for i, f in enumerate(supported_files, 1):
         print(f"  {i}. {f}")
     print()
+    all_ok = True
     for f in supported_files:
-        process_file(f)
+        all_ok = process_file(f) and all_ok
         print()
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
+    exit_code = 1
     try:
-        main()
+        exit_code = main()
     except Exception as e:
         print(f"\n오류 발생: {e}")
         print("\n상세 정보:")
@@ -434,3 +503,4 @@ if __name__ == "__main__":
             input("\nEnter를 눌러 종료...")
         except EOFError:
             pass
+    sys.exit(exit_code)

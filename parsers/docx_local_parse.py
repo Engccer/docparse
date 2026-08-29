@@ -18,10 +18,15 @@ LlamaParse)로 승격할 것. 각주·미주에 실제 텍스트가 있으면 �
 거부한다(python-docx 미지원 영역).
 
 한계: 이미지 안의 텍스트는 범위 밖(존재 시 경고, 출력은 유지 — hwpx_local과
-동일 정책). 수식(OMML, m:t)은 양쪽 관점 모두 다루지 않아 검증으로도 잡히지
-않는다(수식 문서는 기존 티어 권장). 심볼 글리프(w:sym)도 같은 대칭 유실
-계급이라 존재 감지 시 거부한다. 중첩 표는 마크다운으로 구조 보존이 불가해
-거부한다. DOC(구형 바이너리)는 Word/LibreOffice로 DOCX 저장 후 입력.
+동일 정책. 머리글·바닥글 파트의 이미지도 함께 센다). 수식(OMML, m:oMath)은
+python-docx와 raw 집계 양쪽 다 읽지 않아 recall 대조로도 안 잡히는 대칭 침묵
+유실이므로, w:sym과 같은 계급으로 **존재 감지 시 거부**한다(2026-08-31. 종전에는
+문서화만 하고 통과시켜, 지문만 남고 수식이 사라진 파일이 PASS로 나갔다).
+중첩 표는 마크다운으로 구조 보존이 불가해 거부한다. DOC(구형 바이너리)는
+Word/LibreOffice로 DOCX 저장 후 입력.
+
+종료 코드: 0 = PASS(출력 파일 생성), 1 = 오류·거부(출력 없음). 실행 시작 시
+같은 이름의 이전 출력을 지운다.
 """
 import os
 import re
@@ -50,6 +55,24 @@ def get_output_filename(input_file):
     base_name = os.path.splitext(os.path.basename(input_file))[0]
     output_name = f"{base_name}_docxlocal.md"
     return os.path.join(dir_path, output_name) if dir_path else output_name
+
+
+def clear_stale_output(output_file):
+    """같은 이름의 이전 출력이 있으면 지운다(실패한 실행 뒤 옛 파일 잔존 방지)."""
+    if os.path.exists(output_file):
+        os.remove(output_file)
+        print(f"기존 출력 제거: {output_file}")
+
+
+def _count_silent_loss_markers(xml_text):
+    """양쪽 관점이 모두 못 읽는 요소(심볼 글리프·OMML 수식)와 이미지 개수를 센다.
+
+    반환: (sym_count, omath_count, image_count)
+    """
+    sym = xml_text.count("<w:sym ") + xml_text.count("<w:sym/")
+    omath = xml_text.count("<m:oMath>") + xml_text.count("<m:oMath ")
+    images = xml_text.count("<w:drawing>") + xml_text.count("<w:drawing ")
+    return sym, omath, images
 
 
 def _cell_md(text):
@@ -242,6 +265,7 @@ def collect_header_footer_parts(doc):
 
 
 def process_file(filename):
+    """PASS로 출력 파일을 만들었으면 True."""
     import docx
 
     print(f"입력 파일: {filename}")
@@ -249,14 +273,17 @@ def process_file(filename):
     if ext == ".doc":
         print("오류: DOC(구형 바이너리)는 직접 처리할 수 없습니다.")
         print("  Word/LibreOffice에서 DOCX로 저장 후 입력하세요.")
-        return
+        return False
     if ext not in SUPPORTED_EXTENSIONS:
         print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
         print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
-        return
+        return False
     if not os.path.exists(filename):
         print(f"오류: 파일을 찾을 수 없습니다: {filename}")
-        return
+        return False
+
+    output_file = get_output_filename(filename)
+    clear_stale_output(output_file)
 
     print("추출 중... (python-docx 본문 순서 보존 + XML 전수 recall 대조)")
     doc = docx.Document(filename)
@@ -264,10 +291,13 @@ def process_file(filename):
 
     # 머리글·바닥글은 본문과 별개 XML 파트라 document.xml recall이 못 덮는다.
     # 파트별로 같은 추출(표 포함)·검증을 적용한다(첫/짝수 페이지 변형 포함).
+    # 이미지·심볼·수식도 파트별로 함께 센다(머리글 로고 속 기관명은 흔한 유실 지점).
     hf_sections = []  # (라벨, 블록 목록)
     hf_problems = []
     hf_token_total = 0
     sym_count = 0
+    omath_count = 0
+    images = 0
     for label, hf in collect_header_footer_parts(doc):
         hf_blocks, hf_raws, hf_merged, hf_nested = extract_blocks(hf)
         merged_cells += hf_merged
@@ -276,7 +306,10 @@ def process_file(filename):
         hf_token_total += count
         hf_problems.extend(part_problems)
         hf_xml = hf.part.blob.decode("utf-8", "replace")
-        sym_count += hf_xml.count("<w:sym ") + hf_xml.count("<w:sym/")
+        s, m, im = _count_silent_loss_markers(hf_xml)
+        sym_count += s
+        omath_count += m
+        images += im
         if hf_blocks:
             hf_sections.append((label, hf_blocks))
 
@@ -285,10 +318,12 @@ def process_file(filename):
         footnote_text = _part_has_text(zf, "word/footnotes.xml")
         endnote_text = _part_has_text(zf, "word/endnotes.xml")
         has_comments = _part_has_text(zf, "word/comments.xml")
-    images = document_xml.count("<w:drawing>") + document_xml.count("<w:drawing ")
-    # w:sym(심볼 폰트 글리프)은 python-docx와 raw 집계 양쪽 다 못 읽어 recall
-    # 대조로도 안 잡히는 대칭 침묵 유실이므로, 존재 자체를 감지해 거부한다.
-    sym_count += document_xml.count("<w:sym ") + document_xml.count("<w:sym/")
+    # w:sym(심볼 폰트 글리프)·m:oMath(수식)는 python-docx와 raw 집계 양쪽 다
+    # 못 읽어 recall 대조로도 안 잡히는 대칭 침묵 유실이므로, 존재 자체를 감지해 거부한다.
+    s, m, im = _count_silent_loss_markers(document_xml)
+    sym_count += s
+    omath_count += m
+    images += im
 
     print(f"본문 블록 {len(blocks)}개 · 병합 셀 {merged_cells}곳")
 
@@ -307,20 +342,22 @@ def process_file(filename):
         blocking.append("미주에 텍스트 존재: python-docx 미지원 영역(누락 위험)")
     if sym_count:
         blocking.append(f"심볼 글리프(w:sym) {sym_count}개: 양쪽 관점 모두 못 읽어 조용한 유실 위험")
+    if omath_count:
+        blocking.append(f"수식(OMML m:oMath) {omath_count}개: 양쪽 관점 모두 못 읽어 조용한 유실 위험")
 
     if blocking:
         print(f"경고: 검증·구조 문제 {len(blocking)}건")
         for line in blocking[:MAX_PROBLEM_SAMPLES + 3]:
             print(f"  - {line}")
         print("→ 검증 실패: 출력 파일을 만들지 않았습니다. 기존 티어(Upstage·LlamaParse)로 승격하세요.")
-        return
+        return False
 
     if merged_cells:
         print(f"[알림] 병합 셀 {merged_cells}곳: 값은 앵커 위치에 1회만 기록했습니다.")
     if has_comments:
         print("[알림] 문서에 검토 메모(comment)가 있습니다. 본문이 아니므로 출력에 포함하지 않았습니다.")
     if images:
-        print(f"경고: 이미지 {images}개 존재. 그 안의 텍스트는 추출 범위 밖입니다.")
+        print(f"경고: 이미지 {images}개 존재(머리글·바닥글 포함). 그 안의 텍스트는 추출 범위 밖입니다.")
         print("  이미지 내 텍스트가 중요하면 Upstage(upstage_parse.py)로 교차검증하세요.")
 
     parts = list(blocks)
@@ -334,26 +371,26 @@ def process_file(filename):
             else:
                 parts.append(f"{label}: {block}")
 
-    output_file = get_output_filename(filename)
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("\n\n".join(parts) + "\n")
     print(f"출력 파일: {output_file}")
     print("=== PASS: document.xml 전수 recall 일치 ===")
+    return True
 
 
 def main():
+    """반환값이 종료 코드다(0 성공 / 1 실패)."""
     try:
         import docx  # noqa: F401
     except ImportError as e:
         print("오류: python-docx 패키지를 찾을 수 없습니다.")
         print("설치 명령: pip install python-docx")
         print(f"상세: {e}")
-        return
+        return 1
 
     positional = [a for a in sys.argv[1:] if not a.startswith("--")]
     if positional:
-        process_file(positional[0])
-        return
+        return 0 if process_file(positional[0]) else 1
 
     supported_files = sorted(
         f for f in os.listdir(".")
@@ -362,22 +399,24 @@ def main():
     if not supported_files:
         print("오류: 현재 디렉토리에 지원되는 DOCX 파일이 없습니다.")
         print(f"지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
-        return
+        return 1
     if len(supported_files) == 1:
-        process_file(supported_files[0])
-        return
+        return 0 if process_file(supported_files[0]) else 1
     print(f"DOCX 파일 {len(supported_files)}개 발견:")
     for i, f in enumerate(supported_files, 1):
         print(f"  {i}. {f}")
     print()
+    all_ok = True
     for f in supported_files:
-        process_file(f)
+        all_ok = process_file(f) and all_ok
         print()
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
+    exit_code = 1
     try:
-        main()
+        exit_code = main()
     except Exception as e:
         print(f"\n오류 발생: {e}")
         print("\n상세 정보:")
@@ -390,3 +429,4 @@ if __name__ == "__main__":
             input("\nEnter를 눌러 종료...")
         except EOFError:
             pass
+    sys.exit(exit_code)

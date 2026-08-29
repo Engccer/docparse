@@ -147,7 +147,7 @@ python <스킬루트>/scripts/normalize_odl.py "<odl_output.md>" "<파일명>_fu
 스크립트가 자동 처리하는 항목:
 
 1. **페이지 구분자 제거**: `---`, `<!-- Page N -->` 행 삭제.
-2. **이미지 placeholder 제거**: `![image](...)`, `<figure>/<figcaption>` 블록 삭제.
+2. **이미지 placeholder 축약**: `![alt](...)` → `(이미지: alt)`(alt 없으면 `(이미지)`). 삭제하지 않는다(이미지가 있었다는 사실이 정보다, 2026-08-31). `<figcaption>텍스트</figcaption>` 한 줄 캡션은 `(이미지 캡션: 텍스트)`로 남기고, 빈 `<figure>/<figcaption>` 태그 줄만 삭제. 장식·도표 판정은 Step 7.
 3. **h6 heading 정규화**: 번호 패턴 기반 계층화 (Ⅰ~Ⅵ→H1, N.→H2, N)→H3, (N)→H4, ①→H5).
 4. **plain-text heading 승격**: blank line 사이의 standalone 번호 패턴을 heading으로.
 5. **챕터 표지 페이지 제거**: `# [로마숫자]` + 제목 + mini-TOC 패턴 감지 시 삭제.
