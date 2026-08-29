@@ -2,6 +2,12 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
+## 2026-08-29 (평가 도구 parser-eval 이관)
+
+- **`scripts/score_transcription.py`·`scripts/diff_fidelity.py`를 `parser-eval` 스킬로 이관.** 두 스크립트는 파싱 도구가 아니라 **파서를 견주는 도구**다. 파서 비교평가가 다섯 건 쌓이는 동안 그중 두 건이 HWPX 엔진 비교(hwpx-tomd vs python-hwpx)였는데, 그건 docparse가 아니라 `hwpx-automation`·`hwpx-tomd` 영역이라 평가 절차를 docparse 안에 두면 소속이 어긋난다. 평가 워크플로우는 docparse·hwpx-automation·check-stack-updates 세 스킬을 가로지르므로 독립 스킬(`parser-eval`)로 분리했다.
+- `SKILL.md` 스크립트 표에서 두 항목 제거 + 이관 안내 한 줄. `references/tier-rules.md`의 `diff_fidelity.py` 호출 경로, `references/handwriting-cascade.md`의 CER/WER 채점 도구 위치를 새 경로로 갱신.
+- 파싱 방법·프롬프트(캐스케이드 절차, 티어 규칙)는 그대로 docparse가 정본이다. 옮긴 것은 **견주고 채점하는 절차**뿐이다.
+
 ## 2026-08-29 (수식 시험지·pdftotext 함정)
 
 - `references/tier-rules.md`: **수식이 있는 시험지는 LlamaParse v2가 유일한 Primary**. ODL·Upstage는 HancomEQN 계열 수식 글꼴의 변수·수치를 통째로 버린다(서울대 78쪽 면접·구술고사 기출 실측). 판정 방법과 역할 분담(수식은 v2, 해설 표 행 구조는 Upstage 기준으로 대조) 명시.

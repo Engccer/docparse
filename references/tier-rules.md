@@ -183,7 +183,7 @@ LlamaParse v2 Primary 가능. 80p 스캔 의무기록에서 표 열 정확도 A+
 ④ 시각 판독 + (있으면) 명부/원장 대조 → ③ 표적만 집중. 신원 필드는 ②의 저신뢰 flag가 대조 대상 지정
 ```
 
-③은 `python scripts/diff_fidelity.py <llm.md> <gvision.md> --out targets.md`로 자동화한다(토큰 정렬로 발산 토큰 + OCR 저신뢰를 페이지별 표적으로 출력. 한글 띄어쓰기·구두점·태그·conf 주석 노이즈는 자동 필터). 실측: 한 학급 22장에서 `Mr. Han`(환각)·`한글 손글씨 이름`(이름 오독, conf 0.16)을 발산+저신뢰로 이중 포착.
+③은 `python <parser-eval>/scripts/diff_fidelity.py <llm.md> <gvision.md> --out targets.md`로 자동화한다(2026-08-29 docparse에서 `parser-eval` 스킬로 이관. 토큰 정렬로 발산 토큰 + OCR 저신뢰를 페이지별 표적으로 출력. 한글 띄어쓰기·구두점·태그·conf 주석 노이즈는 자동 필터). 실측: 한 학급 22장에서 `Mr. Han`(환각)·`한글 손글씨 이름`(이름 오독, conf 0.16)을 발산+저신뢰로 이중 포착.
 
 근거(한 학급 22장 실측):
 - **충실성**: Tesseract·Vision 모두 위 2종 실패를 구조적으로 안 범함. Vision은 garbling 없이 정확.

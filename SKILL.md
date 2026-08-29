@@ -53,11 +53,11 @@ metadata:
 | `compare_outputs.py` | 파서 출력 비교 (heading 갭·표 수·퓨전 전략) |
 | `normalize_odl.py` | ODL 출력 자동 정리 (페이지 구분자·h6 정규화·heading 승격·빈 줄 압축) |
 | `generate_alt_text.py` | 시각장애인 접근성 alt text 자동 생성 (PyMuPDF + Gemini Vision, 한국어 상세화) |
-| `diff_fidelity.py` | 손글씨 파이프라인 ③단계: LLM 파서 ↔ OCR(gvision) 토큰 정렬로 **발산 토큰**(환각/교정/오독 후보) + OCR 저신뢰 단어를 합쳐 페이지별 "육안 검증 표적" 생성 (전수 → 표적) |
 | `extract_vision_drafts.py` | 캐스케이드 ②단계: `_gvision.md`에서 페이지별 영어 드래프트(라틴 포함·한글 미포함 라인)+저신뢰 목록을 `draft_pNN.txt`로 추출. Claude repair 입력 |
 | `hwpx_enrich.py` | HWPX 결정론 보강: hwpx-tomd 출력에 **개요 스타일→`#` 제목**, **취소선 `~~`·강조색 `<mark>`**(charPr), **인쇄 PDF 실제 쪽 `<!-- p.N -->`**(pdftotext 쪽 텍스트와 전역 LIS 정렬), 간지·머리말 잔재 삭제를 문단 단위 정확 일치로만 입힌다(2026-08-28, 554쪽 HWP 보고서에서 제목 301·서식 런 729·쪽 주석 134 실측) |
 | `apply_corrections.py` | **정본 수정 목록 CSV** 적용기: 오탈자·개인정보·표기 정규화를 손으로 고치지 않고 CSV(문서·원본 쪽·원문·수정문·유형·처리·근거)로 적용·검증(원문 0회면 오류, 치환 후 잔존 검사, 원본 쪽 자동 채움). 정본을 재생성해도 같은 CSV로 같은 결과 |
-| `score_transcription.py` | 손글씨/OCR 전사 **정량 채점**: 정본 대비 후보들의 CER·WER를 항목별·micro/macro 집계(편집 주석 대칭 제거·백지 집계 제외). 모델·방법 calibration용 (2026-06-23 토너먼트에서 정립) |
+
+> **평가 도구는 `parser-eval` 스킬로 이관**(2026-08-29). 파서끼리 견주고 등급을 매기고 그 판정을 장부에 남기는 일은 docparse가 아니라 `parser-eval`이 한다. `score_transcription.py`(정본 대비 CER/WER 정량 채점)와 `diff_fidelity.py`(LLM ↔ OCR 발산 토큰 → 육안 판독 표적)는 이제 `parser-eval/scripts/`에 있다.
 
 ### 참조 (`references/`)
 
