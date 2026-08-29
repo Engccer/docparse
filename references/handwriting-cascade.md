@@ -16,7 +16,7 @@
 
 ## 정량 검증 (2026-06-23 토너먼트, 정본 대조 CER/WER)
 
-> 채점 도구는 `parser-eval` 스킬에 있다(2026-08-29 이관): 정본 대비 CER/WER는 `parser-eval/scripts/score_transcription.py`, 캐스케이드 ③단계의 육안 판독 표적 생성은 `parser-eval/scripts/diff_fidelity.py`. 방법·프롬프트는 이 문서가 정본이고, 견주고 채점하는 절차는 그쪽이다.
+> 채점 도구는 `parser-eval` 스킬로 옮겼다(2026-08-29): 정본 대비 CER/WER는 `parser-eval/scripts/score_transcription.py`, 캐스케이드 ③단계의 육안 판독 표적 생성은 `parser-eval/scripts/diff_fidelity.py`. 그 스킬은 저자 로컬이라 docparse 배포본에는 포함되지 않는다. 방법·프롬프트는 이 문서가 정본이고, 견주고 채점하는 절차만 그쪽이다.
 
 3개 학급 정본을 ground truth로 3단 비교(학번·이름은 동일 주입, 영어 본문 전사만 측정, micro=길이가중).
 

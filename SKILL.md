@@ -57,7 +57,7 @@ metadata:
 | `hwpx_enrich.py` | HWPX 결정론 보강: hwpx-tomd 출력에 **개요 스타일→`#` 제목**, **취소선 `~~`·강조색 `<mark>`**(charPr), **인쇄 PDF 실제 쪽 `<!-- p.N -->`**(pdftotext 쪽 텍스트와 전역 LIS 정렬), 간지·머리말 잔재 삭제를 문단 단위 정확 일치로만 입힌다(2026-08-28, 554쪽 HWP 보고서에서 제목 301·서식 런 729·쪽 주석 134 실측) |
 | `apply_corrections.py` | **정본 수정 목록 CSV** 적용기: 오탈자·개인정보·표기 정규화를 손으로 고치지 않고 CSV(문서·원본 쪽·원문·수정문·유형·처리·근거)로 적용·검증(원문 0회면 오류, 치환 후 잔존 검사, 원본 쪽 자동 채움). 정본을 재생성해도 같은 CSV로 같은 결과 |
 
-> **평가 도구는 `parser-eval` 스킬로 이관**(2026-08-29). 파서끼리 견주고 등급을 매기고 그 판정을 장부에 남기는 일은 docparse가 아니라 `parser-eval`이 한다. `score_transcription.py`(정본 대비 CER/WER 정량 채점)와 `diff_fidelity.py`(LLM ↔ OCR 발산 토큰 → 육안 판독 표적)는 이제 `parser-eval/scripts/`에 있다.
+> **평가 도구는 별도 스킬로 이관**(2026-08-29). 파서끼리 견주고 등급을 매기고 그 판정을 장부에 남기는 일은 docparse가 아니라 `parser-eval` 스킬이 한다. `score_transcription.py`(정본 대비 CER/WER 정량 채점)와 `diff_fidelity.py`(LLM ↔ OCR 발산 토큰 → 육안 판독 표적)는 그쪽 `scripts/`로 옮겼다. ⚠️ **`parser-eval`은 아직 저자 로컬 스킬이라 docparse와 함께 배포되지 않는다** — 외부 설치본에는 두 스크립트가 없다. 파싱 방법과 프롬프트는 그대로 docparse가 정본이고, 옮긴 것은 견주고 채점하는 절차뿐이다.
 
 ### 참조 (`references/`)
 
