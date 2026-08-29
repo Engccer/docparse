@@ -63,7 +63,7 @@ metadata:
 
 | 파일 | 트리거 |
 |------|--------|
-| `tier-rules.md` | 스캔/수기/시험지/합본 PDF 등 티어 외 보정 규칙이 필요할 때 |
+| `tier-rules.md` | 스캔/수기/시험지/합본 PDF 등 티어 외 보정 규칙이 필요할 때. **각 절의 `*근거:*` 줄이 그 규칙의 확신도(n=문서 수)를 말한다** — `n=1`·`미표기` 규칙이 이번 문서와 어긋나면 규칙 쪽을 먼저 의심한다 |
 | `handwriting-cascade.md` | **손글씨 충실 전사 최고 방법**: Vision→Claude(Opus) 캐스케이드가 챔피언(정본 대조 ~98.2%). 모델 비교(단독: Opus>Sonnet +1.0%p / 캐스케이드: +0.3%p, Gemma·Haiku 탈락)·클린 repair 프롬프트·속도. 5-subset 정성 + 3반 토너먼트 CER/WER 정량(2026-06-23) |
 | `handwriting-ocr-engines.md` | 손글씨 위주 스캔 문서 충실 전사용 OCR 엔진 선택(Vision·Azure·CLOVA·TrOCR·Tesseract 등 비교·언어·PII·비용) |
 | `postprocess.md` | LlamaParse v2 후처리 정규식·ODL 자동 정리·Step 7 최종 노이즈 정리 |
