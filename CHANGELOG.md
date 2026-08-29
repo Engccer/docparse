@@ -2,6 +2,13 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
+## 2026-08-29 (수식 판정 방법 정정: 소실이 아니라 PUA 잔존)
+
+- `references/tier-rules.md` 수식 시험지 절의 **기전 서술이 틀렸던 것을 정정**. "ODL·Upstage가 수식 글리프를 통째로 버린다 / 텍스트 레이어 추출이 빈 문자열을 반환한다"는 사실이 아니다. 실제로는 **HancomEQN 글자가 유니코드 사용자 정의 영역(PUA, U+E000~F8FF) 코드로 그대로 잔존**하고 렌더만 되지 않는다. 사람이 못 읽는 결과는 같지만 **탐지 방법이 달라진다**.
+- 그래서 **"조사만 남고 피수식어가 빈 칸"이라는 판정 방법을 폐기**하고 **PUA 코드포인트 계수**로 교체. 자리는 비어 있지 않고 PUA 바이트가 차지하고 있다(같은 문서 조사 앞 공백 폭 실측 {0칸 11, 1칸 454, 2칸 이상 0}).
+- 실측 재확인(서울대 78쪽 기출): PUA 덩어리 LlamaParse 0 / Upstage 731 / ODL 646(코드포인트 0 / 1,227 / 1,275), LaTeX 토큰 450 / 0 / 0. 수식 없는 대조 문서 13종에서는 0~14로 떨어져 변별이 선다.
+- 해설 표 라벨 회수 수치도 실측으로 교체: `활용 모집단위` Upstage·ODL 15/15, LlamaParse 9/15(절 제목이 첫 열 라벨 셀에 병합). 이미지 축 한 줄 추가(Upstage figure-description의 사실 오류, ODL 이미지 참조 0).
+
 ## 2026-08-29 (평가 도구 parser-eval 이관)
 
 - **`scripts/score_transcription.py`·`scripts/diff_fidelity.py`를 `parser-eval` 스킬로 이관.** 두 스크립트는 파싱 도구가 아니라 **파서를 견주는 도구**다. 파서 비교평가가 다섯 건 쌓이는 동안 그중 두 건이 HWPX 엔진 비교(hwpx-tomd vs python-hwpx)였는데, 그건 docparse가 아니라 `hwpx-automation`·`hwpx-tomd` 영역이라 평가 절차를 docparse 안에 두면 소속이 어긋난다. 평가 워크플로우는 docparse·hwpx-automation·check-stack-updates 세 스킬을 가로지르므로 독립 스킬(`parser-eval`)로 분리했다.
