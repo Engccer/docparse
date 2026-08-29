@@ -37,4 +37,4 @@
 
 ## Claude Code 스킬로 설치
 
-이 패키지를 `~/.claude/skills/docparse`(심링크 또는 junction)로 연결하면 `/docparse` 슬래시 명령으로 동작한다. 자기 완결형 패키지이므로 `SKILL.md`, `parsers/`, `scripts/`, `references/` 폴더 하나만 연결하거나 복사하면 모든 환경에서 완전히 동작한다.
+이 패키지를 `~/.claude/skills/docparse`(심링크 또는 junction)로 연결하면 `/docparse` 슬래시 명령으로 동작한다. 자기 완결형 패키지이므로 `SKILL.md`, `parsers/`, `scripts/`, `references/` 폴더 하나만 연결하거나 복사하면 모든 환경에서 완전히 동작한다. <!-- sanitize: allow 설치 경로 안내 -->
