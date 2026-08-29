@@ -245,7 +245,15 @@ PyMuPDF로 헤더·쟁점 구간을 크롭(폭 1500px 이하)해 서브에이전
 - **판정 방법: PUA 코드포인트를 센다.** 육안 대조가 아니라 기계 지표다. 파서 출력마다 PUA 덩어리 수와 LaTeX 토큰 수를 세어 나란히 놓는다.
 
   ```bash
-  python -c "import re,sys; [print(len(re.findall(r'[-]+', open(f,encoding='utf-8').read())), f) for f in sys.argv[1:]]" 출력1.md 출력2.md 출력3.md
+  # 파일마다: PUA 덩어리 / PUA 코드포인트 / 본문 글자수 / 1만 자당 밀도
+  python -c "
+import re, sys
+PUA = re.compile('[\ue000-\uf8ff]')
+for f in sys.argv[1:]:
+    t = open(f, encoding='utf-8').read()
+    cp = len(PUA.findall(t)); runs = len(re.findall(PUA.pattern + '+', t))
+    print(f'{runs:6d} {cp:6d} {len(t):9,d} {cp*10000/max(len(t),1):8.1f}  {f}')
+" 출력1.md 출력2.md 출력3.md
   ```
 
   같은 78쪽 문서 실측: PUA 덩어리가 LlamaParse 0 / Upstage 731 / ODL 646(코드포인트로는 0 / 1,227 / 1,275), LaTeX 토큰은 450 / 0 / 0.
