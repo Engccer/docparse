@@ -9,7 +9,7 @@
 - **적응형 티어 선택**: 사전 점검(페이지 수, 텍스트 레이어, 괘선 격자, 포맷)으로 각 문서를 티어(hwpx / xlsx / docx / small / medium / large / xlarge)로 분류하고 파서 전략을 자동으로 정합니다. 괘선 격자 + 텍스트 레이어 문서는 결정론 파서(pdfplumber)를 추천 선두에 두고(Tier 0), XLSX·DOCX도 로컬 결정론 파서를 우선합니다.
 - **Primary + Patch 퓨전**: 한 파서를 Primary 베이스로 삼고, 나머지 파서는 전체를 다시 파싱하는 대신 빠진 부분(누락된 헤딩, 표 셀, 메타데이터)만 패치합니다. 작업을 효율적으로 유지하면서 각 파서의 강점만 끌어옵니다.
 - **다파서 교차검증**: 숫자 표, 헤딩, 날짜, 고유명사를 파서 간에 대조하고, 데이터 무결성 게이트(산술 검증 + 셀 위치 비교)와 불일치 시 다수결로 판정합니다.
-- **무료 로컬 파서 + 유료 클라우드 파서 혼용**: 로컬 엔진(HWPX, pdfplumber, XLSX, DOCX, OpenDataLoader)은 비용 없이 오프라인으로 동작하고, 클라우드 엔진(LlamaParse v2, Upstage, Gemini, Mistral, Corepin, Google Vision)은 OCR·레이아웃·고완전성 커버리지를 더합니다. 실제로 호출한 클라우드 파서에 대해서만 비용이 발생합니다.
+- **무료 로컬 파서 + 유료 클라우드 파서 혼용**: 로컬 엔진(HWPX, pdfplumber, XLSX, DOCX, OpenDataLoader)은 비용 없이 오프라인으로 동작하고, 클라우드 엔진(LlamaParse v2, Upstage, Gemini, Mistral, Corepin, Cohere, OpenAI, Google Vision)은 OCR·레이아웃·고완전성 커버리지를 더합니다. 실제로 호출한 클라우드 파서에 대해서만 비용이 발생합니다.
 
 ## 파서 라인업
 
@@ -26,6 +26,7 @@
 | **opendataloader** | `parsers/opendataloader_parse.py` | `_opendataloader.md` | 없음 (로컬, 무료) | PDF 전용. Java 런타임과 기존 텍스트 레이어 필요. |
 | **corepin** | `parsers/corepin_parse.py` | `_corepin.md` | `COREPIN_API_KEY` | 다포맷 단일 API 라우터(텍스트 PDF, HWP/HWPX, Office, 스캔 OCR), 한국어 필터링 SLM 내장. 보조·비교용. |
 | **cohere** | `parsers/cohere_parse.py` | `_cohere.md` | `COHERE_API_KEY` | Cohere Parse `parse-v5.0`(2.3B VLM). 한국어가 9개 안정 지원 언어에 포함, $1.50/1,000쪽. 엔드포인트가 이미지만 받아 PDF는 쪽당 1회씩 호출한다. 아직 실측 등급 없음(후보). |
+| **openai** | `parsers/openai_parse.py` | `_openai.md` | `OPENAI_API_KEY` | 범용 멀티모달 모델(기본 `gpt-5.6-terra`)을 Responses API로 부르는 LLM 파서. OpenAI에는 전용 파서·OCR 엔드포인트가 없다. 장문 요약화를 막으려 PDF를 쪽 구간(기본 8쪽)으로 나눠 호출한다. Office는 텍스트만 추출되고 HWPX는 미지원. 아직 실측 등급 없음(후보). |
 | **gvision** | `parsers/gvision_parse.py` | `_gvision.md` | `GOOGLE_VISION_API_KEY` 또는 `GV_TOKEN` + `GV_PROJECT` | 단어별 confidence를 주는 비-LLM OCR. 오기를 보존해야 하는 손글씨·충실 전사용(자동 교정·인명 환각 없음). |
 
 티어별 Primary 매핑(사전 점검 단계에서 자동 배정):
@@ -72,6 +73,8 @@ cp .env.example .env
 | `GEMINI_API_KEY` | gemini, 대체텍스트 생성 | small 티어 또는 대체텍스트 생성 |
 | `MISTRAL_API_KEY` | mistral | 불일치 시 / 비한국어 자료 |
 | `COREPIN_API_KEY` | corepin | HWP 네이티브 / 한국어 비교 |
+| `COHERE_API_KEY` | cohere | 후보 파서 비교 실행 시 |
+| `OPENAI_API_KEY` | openai | 후보 파서 비교 실행 시 |
 | `GOOGLE_VISION_API_KEY` | gvision | 손글씨 OCR (또는 `GV_TOKEN` + `GV_PROJECT` 사용) |
 | `GV_TOKEN` + `GV_PROJECT` | gvision | Vision 대체 인증(OAuth 토큰 + 프로젝트 id) |
 
@@ -124,7 +127,7 @@ docparse는 Claude Code 스킬로 개발됐지만, 구성요소에 따라 다른
 - `docx_local` (`docx_local_parse.py`): DOCX 전용, `python-docx` 패키지 필요.
 - `opendataloader` (`opendataloader_parse.py`): 텍스트 레이어가 있는 PDF 전용, Java 런타임 필요.
 
-**유료 / 클라우드 (API 키 필요):** `upstage`, `gemini`, `llamaparse` (LlamaParse v2), `mistral`, `corepin`, `gvision`. 여러 제공자가 월 무료 할당량을 주며, 가볍거나 가끔 쓰는 용도에는 충분합니다:
+**유료 / 클라우드 (API 키 필요):** `upstage`, `gemini`, `llamaparse` (LlamaParse v2), `mistral`, `corepin`, `cohere`, `openai`, `gvision`. 여러 제공자가 월 무료 할당량을 주며, 가볍거나 가끔 쓰는 용도에는 충분합니다:
 
 | 파서 | 무료 할당량 (제공자 정책에 따라 변동) | 비고 |
 |--------|---------------------------------------------|-------|

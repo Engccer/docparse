@@ -32,11 +32,11 @@ google-genai   # Gemini(gemini_parse.py)
 mistralai      # Mistral(mistral_parse.py)
 llama-cloud    # LlamaParse(llamaparse_parse.py). httpx를 전이 의존성으로 가져온다.
 
-# Cohere Parse(cohere_parse.py)와 Google Vision(gvision_parse.py)은 별도 SDK 없이
-# 표준 라이브러리로 REST를 호출한다. 다만 PDF는 쪽을 이미지로 렌더해야 하므로
-# 아래 PyMuPDF가 사실상 필수다.
+# Cohere Parse(cohere_parse.py)·Google Vision(gvision_parse.py)·OpenAI(openai_parse.py)는
+# 별도 SDK 없이 표준 라이브러리로 REST를 호출한다. 다만 PDF를 쪽 이미지로 렌더하거나
+# (cohere·gvision) 쪽 구간으로 분할하려면(openai) 아래 PyMuPDF가 사실상 필수다.
 
 # === 공통 의존성 (여러 파서·스크립트가 공유) ===
 
-# PDF 페이지 진단(assess_document)·PDF 렌더(gvision)·크레딧 추정(llamaparse)·alt text(generate_alt_text).
+# PDF 페이지 진단(assess_document)·PDF 렌더(gvision·cohere)·쪽 구간 분할(openai)·크레딧 추정(llamaparse)·alt text(generate_alt_text).
 PyMuPDF

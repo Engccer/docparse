@@ -2,6 +2,45 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
+## 2026-09-03 (파서 13종: OpenAI 편입)
+
+OpenAI 모델을 부르는 `openai_parse.py`를 후보 파서로 추가. **등급·티어 배정은 없다** — 실측 0건이라 `parser-eval` 평가 전까지는 후보로만 존재한다.
+
+### 먼저 확인한 것: OpenAI에는 전용 파서·OCR 모델이 없다
+
+공식 문서 기준으로 Upstage Document Parse·Mistral OCR·Cohere Parse에 대응하는 **단일 목적 파싱 엔드포인트가 존재하지 않는다**. 문서 파싱의 공식 경로는 Responses API(`/v1/responses`)에 PDF·이미지를 넣고 범용 멀티모달 모델이 마크다운을 쓰게 하는 것이다(쿡북 "Vision and Document Understanding"). 따라서 이 파서는 **전용 파서 계열이 아니라 Gemini 계열**로 분류한다.
+
+### 추가
+
+- `parsers/openai_parse.py` → `_openai.md`. `OPENAI_API_KEY` 필요. SDK 없이 urllib로 REST를 직접 호출하므로 새 pip 의존성 없음(PDF 분할에 기존 PyMuPDF 사용).
+- 기본 모델 `gpt-5.6-terra`(컨텍스트 1,050,000·최대 출력 128,000·text+image 입력·`reasoning.effort` none~max). `--model gpt-5.6-luna`(저비용 대량)·`gpt-5.6-sol`(최난도)로 교체 가능.
+- 전사 품질 옵션: `--effort`(기본 medium)·`--verbosity`(기본 high, 문자 그대로에 가깝게 쓰게 하는 공식 쿡북 권고)·`--detail`(PDF는 auto|low|high, 이미지는 original 추가).
+
+### 장문 요약화에 대한 설계 (Gemini에서 배운 것을 기본값으로)
+
+범용 LLM은 긴 입력에서 전사 대신 요약으로 빠져 본문을 조용히 버린다(187p 실측으로 Gemini에 "장문 Primary 금지"가 붙은 이유). 같은 결함을 그대로 들이지 않으려고 **PDF를 기본 8쪽 구간으로 나눠 호출**하고(`--pages-per-call`, PyMuPDF로 구간 PDF 생성) 출력에 `<!-- p.9-16/20 -->` 구간 주석을 남긴다. `--pages-per-call 0`이면 파일 전체를 1회 호출한다(PyMuPDF 불필요, 장문 비권장). ⚠ **분할은 완화일 뿐 제거가 아니다** — 구간별 분량을 원문 쪽수와 대조하는 것이 이 파서를 장문에 쓰기 위한 전제다.
+
+### 구조적 제약
+
+- 입력은 PDF·이미지·Office(`.docx`·`.pptx`·`.xlsx`). Office는 API가 **텍스트만 추출하고 쪽 이미지·도표를 보지 않는** 경로라 품질은 로컬 결정론 파서(`docx_local`·`xlsx_local`)가 난다. 다만 **그것은 등급이지 입력 경계가 아니므로** 받을 수 있는 형식은 받아 둔다(로컬 파서가 텍스트박스·각주로 거부·승격할 때 이 파서가 후보로 남는다). 실행 시 텍스트 전용 경로임을 경고로 알린다. HWPX는 API가 형식 자체를 모른다.
+- 요청당 파일 50MB 상한. 구간·단일 파일 어느 경로든 32MB를 넘으면 호출 전에 멈춘다.
+- PDF는 API가 텍스트 레이어와 쪽 이미지를 함께 넣어 준다(`detail` 기본 auto = GPT-5.6에서 high).
+
+### 실행 계약 (2026-08-31 계약 준수)
+
+- 429·5xx는 지수 백오프 2회 재시도(총 3회). 구간이 하나라도 실패하거나, 응답 `status`가 `completed`가 아니거나(출력 상한 도달 등 절단), 모델이 거부하거나, 전 구간이 비면 **출력 미작성 + 종료 코드 1**. 실행 시작 시 이전 출력 제거. 비-TTY 안전.
+
+### 검증
+
+- 오프라인 회귀 **70종 통과**(인자·응답 파싱·펜스 제거 안전성·PDF 분할·재시도·실패 계약·stale 제거·Office 경로·크기 가드). 네트워크는 스턴.
+- **실호출 3건 통과**(합성 1쪽 PDF·DOCX·XLSX, `--effort low`). 문서에 적힌 요청 스키마(`input_file` base64 + `detail` + `reasoning.effort` + `text.verbosity` + `max_output_tokens`)가 실물과 일치했고, 제목·표·숫자가 정확히 나왔다.
+- ⚠ **실측 발견**: XLSX는 API가 스프레드시트를 재가공해 넣어 **원본에 없는 `index` 열이 붙어 나온다**(시트당 앞 1,000행 제한과 같은 결의 문제). `gotchas.md`에 기록.
+- ⚠ 이것은 스모크 테스트이지 평가가 아니다. 합성 1쪽으로는 완전성·장문 거동·스캔 판독을 말할 수 없으므로 등급은 「미평가」로 남는다.
+
+### 같이 고친 것
+
+- `.gitignore`에 `*_cohere.md`가 빠져 있었다(2026-09-03 Cohere 편입 시 누락). `*_openai.md`와 함께 추가.
+
 ## 2026-09-03 (파서 12종: Cohere Parse 편입)
 
 2026-08-27 출시한 Cohere Parse(`parse-v5.0`)를 후보 파서로 추가. **등급·티어 배정은 없다** — 실측 0건이라 `parser-eval` 평가 전까지는 후보로만 존재한다.
