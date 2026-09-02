@@ -42,6 +42,7 @@ metadata:
 | `mistral_parse.py` | `_mistral.md` | MISTRAL_API_KEY | `mistral-ocr-4`. 대용량 완전성 + **헤딩 구조 생성(ocr-4 신규)**, 교차 검증용. 노이즈·OCR 글자 드리프트·수기 과잉교정 잔존 |
 | `opendataloader_parse.py` | `_opendataloader.md` | 없음 (로컬) | Java 필요, PDF 전용, 텍스트 레이어 필수 |
 | `corepin_parse.py` | `_corepin.md` | COREPIN_API_KEY | AI3 OSS 엔진 라우터(텍스트PDF→opendataloader, HWP/HWPX→kordoc, Office→markitdown, **스캔→AI3 자체 OCR**) + 한국어 필터 SLM. 18종 단일 API, 장당 2원. **스캔 양식에서 표 구조 소실 검증됨** → Primary 부적합, 보조/비교용 |
+| `cohere_parse.py` | `_cohere.md` | COHERE_API_KEY | `parse-v5.0`(Cohere Parse, 2.3B VLM·8,192 토큰). 마크다운 + HTML 표 + 이미지 설명. **한국어가 9개 안정 지원 언어에 포함**, $1.50/1,000쪽(트라이얼 키 월 1,000콜 무료). ⚠️ 엔드포인트가 **이미지만** 받아 PDF는 PyMuPDF 렌더 후 **쪽당 1회 호출**(쪽수=호출수=과금). 쪽당 출력이 8,192 토큰에 닿으면 잘릴 수 있어 근접 시 경고. **아직 실측 등급 없음** — 티어 배정 없이 후보로만 존재 |
 | `gvision_parse.py` | `_gvision.md` | GOOGLE_VISION_API_KEY **또는** GV_TOKEN+GV_PROJECT | **비-LLM OCR + 단어별 confidence**. 수기 손글씨 답안 등 오기 보존 critical 문서 전용. 자동교정·인명환각 없이 literal 추출, 저신뢰(<0.90) 단어를 페이지별로 표기 → 시각 판독 표적 자동 생성. PDF는 PyMuPDF로 렌더 후 페이지별 호출. 무료 1,000p/월. **calibration 실증(2026-06-14)**. reading order·체크박스는 약점(v2 병행) |
 
 ### 스크립트 (`scripts/`)
@@ -84,6 +85,7 @@ metadata:
 | **OpenDataLoader** | A- | A+ (100%) | B+ | B (h6 경향) | A | PDF·텍스트 레이어 전용, 이미지 설명 없음 |
 | **Mistral** | B+ | A+ (100%) | A- | **B+ (ocr-4 헤딩 생성)** | A- | 노이즈 후처리 필수, OCR 글자 드리프트, 수기 과잉교정 |
 | **Gemini** (3.5/thinking) | B-(≤15p) | 소형 A / **장문 요약화 F** | A+ | A+ | A+ 포맷 / C 스캔 열(시프트 잔존) | **장문 Primary 금지**(요약화), ≤15p만. 체크박스·한글이름 A(thinking ON 보조). 기본 `thinking_budget=0` |
+| **Cohere Parse** (parse-v5.0) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 0건.** 이 줄의 등급은 평가 전까지 비운다(공급사 주장 ParseBench 79.2 > Mistral OCR 4 74.5는 근거가 아니다). 이미지 입력 전용(PDF는 쪽당 호출), 쪽당 8,192 토큰 상한, confidence 미제공 |
 | **Google Vision** (수기) | A-(수기 전용) | A(손글씨) | **A (오기 보존)** | F(미생성) | C(미지원) | **단어별 confidence 제공(평균 0.95+, 저신뢰 ~7%·잘 calibrated)**. 수기 오기 보존·환각 0. reading order 흐트러짐·체크박스 판정 불안정·클라우드 PII |
 
 ## 실행 워크플로우
@@ -217,7 +219,7 @@ timeout 300 python <스킬루트>/parsers/upstage_parse.py "<파일.hwpx>" < /de
 
 ### Step 4: Primary base 생성
 
-**최종 산출 파일명 규칙** (fused에 어느 파서를 통합했는지 파일명으로 드러낸다): 최종 fused 파일은 `<파일명>_fused_v3_<파서조합>.md`로 명명한다. `<파서조합>`은 **실제로 이 결과물에 내용이 반영된 파서만** Primary부터 나열하고 `+`로 잇는다. 파서 토큰은 개별 출력 접미사와 동일하게 쓴다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`pdfplumber`·`xlsxlocal`·`docxlocal`·`corepin`·`gvision`. 단순 대조만 하고 텍스트를 병합하지 않은 파서는 넣지 않는다(파일명이 곧 "무엇을 합쳤는가"의 기록이므로). 예: LlamaParse Primary에 Upstage heading·메타데이터를 패치하면 `_fused_v3_llamaparse+upstage.md`, Mistral 단독 채택이면 `_fused_v3_mistral.md`, hwpx_local 단독이면 `_fused_v3_hwpxlocal.md`. **Primary base를 만들 때는 Primary 파서명만 붙이고, Step 6에서 보조 파서 내용을 실제로 반영할 때마다 파일명에 `+<파서>`를 덧붙여 rename한다.**
+**최종 산출 파일명 규칙** (fused에 어느 파서를 통합했는지 파일명으로 드러낸다): 최종 fused 파일은 `<파일명>_fused_v3_<파서조합>.md`로 명명한다. `<파서조합>`은 **실제로 이 결과물에 내용이 반영된 파서만** Primary부터 나열하고 `+`로 잇는다. 파서 토큰은 개별 출력 접미사와 동일하게 쓴다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`pdfplumber`·`xlsxlocal`·`docxlocal`·`corepin`·`gvision`·`cohere`. 단순 대조만 하고 텍스트를 병합하지 않은 파서는 넣지 않는다(파일명이 곧 "무엇을 합쳤는가"의 기록이므로). 예: LlamaParse Primary에 Upstage heading·메타데이터를 패치하면 `_fused_v3_llamaparse+upstage.md`, Mistral 단독 채택이면 `_fused_v3_mistral.md`, hwpx_local 단독이면 `_fused_v3_hwpxlocal.md`. **Primary base를 만들 때는 Primary 파서명만 붙이고, Step 6에서 보조 파서 내용을 실제로 반영할 때마다 파일명에 `+<파서>`를 덧붙여 rename한다.**
 
 #### LlamaParse v2 Primary
 
@@ -292,7 +294,7 @@ python <스킬루트>/scripts/compare_outputs.py "<primary.md>" "<upstage.md>"
 mkdir -p "<파일 디렉토리>/_work-docparse"
 mv "<파일명>_llamaparse.md" "<파일명>_upstage.md" "<파일 디렉토리>/_work-docparse/"
 # 사용된 경우 _gemini.md, _mistral.md, _opendataloader.md, _hwpxlocal.md, _pdfplumber.md,
-# _xlsxlocal.md, _docxlocal.md, _gvision.md, _corepin.md도 이동
+# _xlsxlocal.md, _docxlocal.md, _gvision.md, _corepin.md, _cohere.md도 이동
 # (로컬 티어 단독 채택이면 그 출력을 _fused_v3_<토큰>.md로 채택)
 ```
 

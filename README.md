@@ -25,6 +25,7 @@
 | **mistral** | `parsers/mistral_parse.py` | `_mistral.md` | `MISTRAL_API_KEY` | 대형 문서 완전성·3-way 교차검증. |
 | **opendataloader** | `parsers/opendataloader_parse.py` | `_opendataloader.md` | 없음 (로컬, 무료) | PDF 전용. Java 런타임과 기존 텍스트 레이어 필요. |
 | **corepin** | `parsers/corepin_parse.py` | `_corepin.md` | `COREPIN_API_KEY` | 다포맷 단일 API 라우터(텍스트 PDF, HWP/HWPX, Office, 스캔 OCR), 한국어 필터링 SLM 내장. 보조·비교용. |
+| **cohere** | `parsers/cohere_parse.py` | `_cohere.md` | `COHERE_API_KEY` | Cohere Parse `parse-v5.0`(2.3B VLM). 한국어가 9개 안정 지원 언어에 포함, $1.50/1,000쪽. 엔드포인트가 이미지만 받아 PDF는 쪽당 1회씩 호출한다. 아직 실측 등급 없음(후보). |
 | **gvision** | `parsers/gvision_parse.py` | `_gvision.md` | `GOOGLE_VISION_API_KEY` 또는 `GV_TOKEN` + `GV_PROJECT` | 단어별 confidence를 주는 비-LLM OCR. 오기를 보존해야 하는 손글씨·충실 전사용(자동 교정·인명 환각 없음). |
 
 티어별 Primary 매핑(사전 점검 단계에서 자동 배정):
