@@ -218,6 +218,9 @@ def parse_args(argv):
             if i + 1 >= len(argv):
                 raise ValueError(f"{a} 값이 없습니다.")
             val = argv[i + 1]
+            # 값 자리에 플래그가 오면 값을 삼킨 것이다(`--model --effort high` 류).
+            if val.startswith("--"):
+                raise ValueError(f"{a} 값 자리에 옵션이 왔습니다: {val}")
             if a == "--pages-per-call":
                 opts["pages_per_call"] = int(val)
             elif a == "--max-output":
@@ -228,6 +231,9 @@ def parse_args(argv):
         elif a.startswith("--"):
             raise ValueError(f"알 수 없는 옵션: {a}")
         else:
+            # 파일을 둘 이상 주면 마지막 것이 조용히 이기고 앞 파일은 파싱되지 않는다.
+            if path is not None:
+                raise ValueError(f"파일은 한 번에 하나만 받습니다: {path}, {a}")
             path = a
             i += 1
     if opts["effort"] not in EFFORTS:
