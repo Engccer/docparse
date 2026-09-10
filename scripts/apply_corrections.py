@@ -55,18 +55,25 @@ def replace_in_pages(segments, pages_wanted, src, dst):
     주석 쪽 직전까지를 덮는다(표 한 덩어리가 여러 쪽에 걸치면 그 안의 쪽은 주석이 없다).
     원본 쪽이 그 범위 안에 들면 같은 구간으로 본다.
     """
-    count = 0
-    out = []
-    for k, (page, seg) in enumerate(segments):
-        nxt = next((pg for pg, _ in segments[k + 1:] if pg is not None), None)
-        # 다음 주석 쪽까지 포함(경계 쪽에 걸친 표는 앞 구간에 묶여 있을 수 있다)
-        covered = page is not None and any(
-            (page <= w and (nxt is None or w <= nxt)) for w in pages_wanted
-        )
-        if covered and src in seg:
-            count += seg.count(src)
-            seg = seg.replace(src, dst)
-        out.append((page, seg))
+    def run(inclusive: bool):
+        count = 0
+        out = []
+        for k, (page, seg) in enumerate(segments):
+            nxt = next((pg for pg, _ in segments[k + 1:] if pg is not None), None)
+            covered = page is not None and any(
+                (page <= w and (nxt is None or (w <= nxt if inclusive else w < nxt))) for w in pages_wanted
+            )
+            if covered and src in seg:
+                count += seg.count(src)
+                seg = seg.replace(src, dst)
+            out.append((page, seg))
+        return out, count
+
+    # 1차: 자기 쪽부터 다음 주석 쪽 직전까지. 0회면 2차: 다음 주석 쪽까지 포함(경계 쪽 머리에 오는 표는
+    # 앞 구간에 묶여 있다). 처음부터 포함하면 원문이 두 구간에 다 있을 때 앞 쪽까지 바뀐다(리뷰 P1).
+    out, count = run(False)
+    if count == 0:
+        out, count = run(True)
     return out, count
 
 

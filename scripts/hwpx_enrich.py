@@ -77,18 +77,18 @@ def t_text(t_elem) -> str:
     return "".join(parts)
 
 
-ITALIC = False  # --italic: 기울임 run을 *…*로, 문단 전체가 기울임이면 인용(> *…*)으로
+def para_runs(p_elem, charpr, mark_colors, italic=False):
+    """문단 직속 run들의 (텍스트, strike, mark, italic) 목록. 중첩 표·글상자는 제외.
 
-
-def para_runs(p_elem, charpr, mark_colors):
-    """문단 직속 run들의 (텍스트, strike, mark, italic) 목록. 중첩 표·글상자는 제외."""
+    italic=True(--italic)면 기울임 run을 표시해 annotate가 *…*로, 문단 전체 기울임은 인용(> *…*)으로 낸다.
+    """
     runs = []
     for run in p_elem.findall("hp:run", NS):
         cp = charpr.get(run.get("charPrIDRef"), {"strike": False, "color": "", "italic": False})
         txt = "".join(t_text(t) for t in run.findall("hp:t", NS))
         if not txt:
             continue
-        runs.append((txt, cp["strike"], cp["color"] in mark_colors, ITALIC and cp.get("italic", False)))
+        runs.append((txt, cp["strike"], cp["color"] in mark_colors, italic and cp.get("italic", False)))
     return runs
 
 
@@ -127,7 +127,7 @@ def annotate(runs) -> tuple[str, str, bool]:
     return plain, norm_ws("".join(out)), whole_italic
 
 
-def walk_sections(z: zipfile.ZipFile, charpr, mark_colors):
+def walk_sections(z: zipfile.ZipFile, charpr, mark_colors, italic=False):
     """section*.xml을 순서대로 걸어 (최상위 문단 목록, 서식 주석 목록)을 만든다."""
     names = sorted(
         (n for n in z.namelist() if re.fullmatch(r"Contents/section\d+\.xml", n)),
@@ -145,24 +145,24 @@ def walk_sections(z: zipfile.ZipFile, charpr, mark_colors):
             root = ET.fromstring(raw)
         # 최상위 문단: <hs:sec> 직속 <hp:p>
         for p in root.findall("hp:p", NS):
-            runs = para_runs(p, charpr, mark_colors)
+            runs = para_runs(p, charpr, mark_colors, italic)
             plain = norm_ws("".join(r[0] for r in runs))
             top_paras.append((plain, p.get("styleIDRef")))
             # 구역 머리말(header ctrl)의 문단: hwpx-tomd가 본문 자리에 한 번 내보낸다(부 제목 등)
             for hdr in p.findall("hp:run/hp:ctrl/hp:header", NS):
                 for hp_ in hdr.iter(f"{{{NS['hp']}}}p"):
-                    r2 = para_runs(hp_, charpr, mark_colors)
+                    r2 = para_runs(hp_, charpr, mark_colors, italic)
                     t2 = norm_ws("".join(r[0] for r in r2))
                     if t2:
                         top_paras.append((t2, hp_.get("styleIDRef")))
         for p in root.iter(f"{{{NS['hp']}}}p"):
-            runs = para_runs(p, charpr, mark_colors)
+            runs = para_runs(p, charpr, mark_colors, italic)
             plain = norm_ws("".join(r[0] for r in runs))
             if plain:
                 all_style_text[p.get("styleIDRef")].add(plain)
         # 모든 문단(중첩 포함)의 서식 주석
         for p in root.iter(f"{{{NS['hp']}}}p"):
-            runs = para_runs(p, charpr, mark_colors)
+            runs = para_runs(p, charpr, mark_colors, italic)
             if not any(r[1] or r[2] or r[3] for r in runs):
                 continue
             plain, ann, whole_italic = annotate(runs)
@@ -381,8 +381,6 @@ def main():
                     help="기울임 run을 *…*로, 문단 전체가 기울임인 표 밖 줄은 인용(> *…*)으로 낸다")
     ap.add_argument("--page-label-rule", default="", help="'lo-hi:prefix' 목록(쉼표). 예 '1-12:목차 ,13-24:Ⅰ-'")
     args = ap.parse_args()
-    global ITALIC
-    ITALIC = args.italic
 
     report = {}
     z = zipfile.ZipFile(args.hwpx)
@@ -420,7 +418,7 @@ def main():
     drop_rx = re.compile(args.drop_regex) if args.drop_regex else None
     drop_tbl_rx = re.compile(args.drop_table_regex) if args.drop_table_regex else None
 
-    top_paras, annots, all_style_text = walk_sections(z, charpr, mark_colors)
+    top_paras, annots, all_style_text = walk_sections(z, charpr, mark_colors, args.italic)
     drop_texts = set()
     for sid in drop_styles:
         drop_texts |= all_style_text.get(sid, set())
