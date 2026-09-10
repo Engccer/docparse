@@ -60,7 +60,8 @@ def read_header(z: zipfile.ZipFile):
         if so is not None and (so.get("shape") or "NONE").upper() != "NONE":
             strike = True
         color = (cp.get("textColor") or "").lstrip("#").upper()
-        charpr[cp.get("id")] = {"strike": strike, "color": color}
+        italic = cp.find("hh:italic", NS) is not None
+        charpr[cp.get("id")] = {"strike": strike, "color": color, "italic": italic}
     return styles, charpr
 
 
@@ -76,30 +77,37 @@ def t_text(t_elem) -> str:
     return "".join(parts)
 
 
+ITALIC = False  # --italic: 기울임 run을 *…*로, 문단 전체가 기울임이면 인용(> *…*)으로
+
+
 def para_runs(p_elem, charpr, mark_colors):
-    """문단 직속 run들의 (텍스트, strike, mark) 목록. 중첩 표·글상자는 제외."""
+    """문단 직속 run들의 (텍스트, strike, mark, italic) 목록. 중첩 표·글상자는 제외."""
     runs = []
     for run in p_elem.findall("hp:run", NS):
-        cp = charpr.get(run.get("charPrIDRef"), {"strike": False, "color": ""})
+        cp = charpr.get(run.get("charPrIDRef"), {"strike": False, "color": "", "italic": False})
         txt = "".join(t_text(t) for t in run.findall("hp:t", NS))
         if not txt:
             continue
-        runs.append((txt, cp["strike"], cp["color"] in mark_colors))
+        runs.append((txt, cp["strike"], cp["color"] in mark_colors, ITALIC and cp.get("italic", False)))
     return runs
 
 
-def annotate(runs) -> tuple[str, str]:
-    """(원문 정규화, 주석 적용 정규화). 인접 동일 서식 런은 합치고 마커 안쪽 공백은 밖으로 뺀다."""
+def annotate(runs) -> tuple[str, str, bool]:
+    """(원문 정규화, 주석 적용 정규화, 문단 전체 기울임 여부).
+
+    인접 동일 서식 런은 합치고 마커 안쪽 공백은 밖으로 뺀다. 면담 인용문처럼 문단 전체가
+    기울임이면 세 번째 값이 True이고, 호출자가 표 밖 줄에 한해 인용(`> `)으로 만든다.
+    """
     plain = norm_ws("".join(r[0] for r in runs))
     merged = []
-    for txt, strike, mark in runs:
-        if merged and merged[-1][1] == strike and merged[-1][2] == mark:
+    for txt, strike, mark, italic in runs:
+        if merged and merged[-1][1:] == [strike, mark, italic]:
             merged[-1][0] += txt
         else:
-            merged.append([txt, strike, mark])
+            merged.append([txt, strike, mark, italic])
     out = []
-    for txt, strike, mark in merged:
-        if not (strike or mark):
+    for txt, strike, mark, italic in merged:
+        if not (strike or mark or italic):
             out.append(txt)
             continue
         lead = txt[: len(txt) - len(txt.lstrip())]
@@ -112,8 +120,11 @@ def annotate(runs) -> tuple[str, str]:
             core = f"<mark>{core}</mark>"
         if strike:
             core = f"~~{core}~~"
+        if italic:
+            core = f"*{core}*"
         out.append(lead + core + trail)
-    return plain, norm_ws("".join(out))
+    whole_italic = bool(merged) and all(m[3] for m in merged if m[0].strip())
+    return plain, norm_ws("".join(out)), whole_italic
 
 
 def walk_sections(z: zipfile.ZipFile, charpr, mark_colors):
@@ -152,11 +163,11 @@ def walk_sections(z: zipfile.ZipFile, charpr, mark_colors):
         # 모든 문단(중첩 포함)의 서식 주석
         for p in root.iter(f"{{{NS['hp']}}}p"):
             runs = para_runs(p, charpr, mark_colors)
-            if not any(r[1] or r[2] for r in runs):
+            if not any(r[1] or r[2] or r[3] for r in runs):
                 continue
-            plain, ann = annotate(runs)
+            plain, ann, whole_italic = annotate(runs)
             if plain and ann != plain:
-                annots.append((plain, ann))
+                annots.append((plain, ann, whole_italic))
     return top_paras, annots, all_style_text
 
 
@@ -179,10 +190,16 @@ def join_row(cells) -> str:
 
 
 def apply_annotations(lines, annots, report):
-    """세그먼트(줄 / 셀 / 셀 내 <br> 조각)가 원문과 정확히 같을 때만 주석본으로 치환."""
+    """세그먼트(줄 / 셀 / 셀 내 <br> 조각)가 원문과 정확히 같을 때만 주석본으로 치환.
+
+    문단 전체가 기울임인 표 밖 줄은 인용 블록(`> *…*`)으로 만든다(면담 인용문의 들여쓰기).
+    """
     table = {}
-    for plain, ann in annots:
+    quote = set()
+    for plain, ann, whole_italic in annots:
         table.setdefault(plain, ann)
+        if whole_italic:
+            quote.add(plain)
     esc = {p.replace("|", "\\|"): a.replace("|", "\\|") for p, a in table.items()}
     hit = Counter()
     out = []
@@ -191,7 +208,7 @@ def apply_annotations(lines, annots, report):
         if cells is None:
             if line in table:
                 hit[line] += 1
-                out.append(table[line])
+                out.append(("> " if line in quote else "") + table[line])
             else:
                 out.append(line)
             continue
@@ -358,8 +375,14 @@ def main():
     ap.add_argument("--drop-table-regex", default="", help="모든 셀이 이 정규식 또는 간지 텍스트에 걸리는 레이아웃 표 삭제")
     ap.add_argument("--mark-color", default="0000FF", help="<mark>로 감쌀 글자색 hex 목록(쉼표, # 없이)")
     ap.add_argument("--page-comment", default="<!-- p.{label} (pdf {pdf}) -->")
+    ap.add_argument("--page-comment-every", action="store_true",
+                    help="제목 앞뿐 아니라 쪽이 바뀐 뒤 처음 만나는 표 밖 본문 줄 앞에도 쪽 주석을 낸다(절 안 쪽 범위·쪽 한정 치환용)")
+    ap.add_argument("--italic", action="store_true",
+                    help="기울임 run을 *…*로, 문단 전체가 기울임인 표 밖 줄은 인용(> *…*)으로 낸다")
     ap.add_argument("--page-label-rule", default="", help="'lo-hi:prefix' 목록(쉼표). 예 '1-12:목차 ,13-24:Ⅰ-'")
     args = ap.parse_args()
+    global ITALIC
+    ITALIC = args.italic
 
     report = {}
     z = zipfile.ZipFile(args.hwpx)
@@ -538,6 +561,17 @@ def main():
             continue
         if page_idx is not None and page_idx[i] is not None:
             cur_page = page_idx[i]
+        # 표 블록 안에는 주석을 넣지 않지만, 표의 첫 줄에서 쪽이 바뀌었으면 표 앞에 낸다
+        # (쪽 머리에 오는 조사지 표지 표가 앞 쪽 구간에 묶이지 않게)
+        table_start = split_row(line) is not None and not (out and split_row(out[-1]) is not None)
+        if (args.page_comment_every and i not in heading_level and pages is not None
+                and cur_page is not None and cur_page != last_page_written
+                and line and not line.startswith("<!--") and (split_row(line) is None or table_start)):
+            pg = pages[cur_page]
+            if out and out[-1] != "":
+                out.append("")
+            out.append(args.page_comment.format(label=label(pg), pdf=pg["pdf"]))
+            last_page_written = cur_page
         if i in heading_level:
             if pages is not None and cur_page is not None and cur_page != last_page_written:
                 pg = pages[cur_page]
