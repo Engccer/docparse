@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -311,7 +312,9 @@ def assign_pages(lines, pages, report, heading_idx=frozenset(), min_len=10, key_
         key = key[:key_len]
         tried += 1
         hits = [k for k, pg in enumerate(pages) if key in pg["key"]]
-        if hits and len(hits) <= 12:
+        # 제목은 자기 쪽(과 목차)에만 있어야 한다. 3쪽 넘게 나오는 제목 문구는 장 머리글·부록 옆 탭이라 위치
+        # 신호가 아니다(인사관리 「□ 보조공학기기 신청 서식」이 옆 탭 때문에 113쪽으로 붙던 문제) — 뒤 본문에서 상속.
+        if hits and len(hits) <= (3 if is_heading else 12):
             cands.append((i, hits))
     # LIS(비감소) over candidates: 각 줄은 후보를 내림차순으로 넣어 같은 줄이 두 번 쓰이지 않게 한다
     tails = []  # (page, node_id)
@@ -334,6 +337,51 @@ def assign_pages(lines, pages, report, heading_idx=frozenset(), min_len=10, key_
         result[li] = pg
         found += 1
         nid = prev
+    # 2차: 빈 쪽 채우기. 1차 정렬이 건너뛴 쪽(앞뒤 정렬 쪽 사이에 비어 있는 쪽)만 대상으로, 그 창 안에서
+    # 8자 조각 여러 개로 다시 찾는다. 서식·표 위주 쪽은 pdftotext -layout이 칸을 가로로 섞어 16자 연속 키가
+    # 잡히지 않아 쪽이 통째로 빠졌다(인사관리 42쪽·최종보고서 직무분류표 53~79쪽, 3차 검수 28·30·34번).
+    # 창 밖은 보지 않고, 앞뒤 정렬 쪽에는 한 조각도 없으면서 창 안 정확히 한 쪽에만 조각 과반이 맞을 때 채우므로
+    # 1차 정렬의 단조 증가를 깨지 않는다. 제목 줄은 여기서 채우지 않는다(아래 상속 규칙).
+    filled = 0
+    next_assigned = [None] * len(lines)
+    upcoming = None
+    for i in range(len(lines) - 1, -1, -1):
+        if result[i] is not None:
+            upcoming = result[i]
+        next_assigned[i] = upcoming
+    cur = None
+    dbg = os.environ.get("HWPX_ENRICH_DEBUG_RANGE")
+    dbg_lo, dbg_hi = (int(x) for x in dbg.split("-")) if dbg else (0, -1)
+    for i, line in enumerate(lines):
+        if dbg_lo <= i + 1 <= dbg_hi:
+            print(f"[gap-range] L{i + 1} result={pages[result[i]]['printed'] if result[i] is not None else None} cur={pages[cur]['printed'] if cur is not None else None} nxt={pages[next_assigned[i]]['printed'] if next_assigned[i] is not None else None} heading={i in heading_idx} | {line[:60]}", file=sys.stderr)
+        if result[i] is not None:
+            cur = result[i]
+            continue
+        if i in heading_idx or not line or line.startswith("<!--") or line.startswith("| --- "):
+            continue
+        nxt = next_assigned[i]
+        if cur is None or nxt is None or nxt - cur < 2:
+            continue
+        cells = split_row(line)
+        seg = line
+        if cells is not None:
+            seg = max((c.split("<br>")[0] for c in cells), key=lambda c: len(re.sub(r"[\W_]+", "", c)), default="")
+        key = re.sub(r"[\W_]+", "", re.sub(r"</?mark>|~~", "", seg))[:40]
+        chunks = [key[k:k + 8] for k in range(0, len(key) - 7, 8)]
+        if len(chunks) < 2:
+            continue  # 16자 미만 줄은 이웃을 따른다
+        score = lambda p: sum(c in pages[p]["key"] for c in chunks)
+        scores = {p: score(p) for p in range(cur + 1, nxt)}
+        best = max(scores.values())
+        winners = [p for p, s in scores.items() if s == best]
+        if os.environ.get("HWPX_ENRICH_DEBUG") and best:
+            print(f"[gap] L{i + 1} cur={pages[cur]['printed']}({score(cur)}) nxt={pages[nxt]['printed']}({score(nxt)}) n={len(chunks)} scores={ {pages[p]['printed']: s for p, s in scores.items() if s} } | {line[:50]}", file=sys.stderr)
+        # 창 안 한 쪽이 조각 과반을 갖고 앞뒤 정렬 쪽보다 뚜렷이 많이 맞을 때만(공통 문구 조각이 앞 쪽에도 있을 수 있다)
+        if best >= (len(chunks) + 1) // 2 and len(winners) == 1 and best > score(cur) and best > score(nxt):
+            result[i] = winners[0]
+            cur = winners[0]
+            filled += 1
     # 제목 줄은 자기 매칭이 없으면 바로 뒤 본문(같은 쪽일 가능성이 큼)의 쪽을 물려받는다
     for i, line in enumerate(lines):
         if i in heading_idx and result[i] is None:
@@ -341,7 +389,7 @@ def assign_pages(lines, pages, report, heading_idx=frozenset(), min_len=10, key_
                 if result[j] is not None:
                     result[i] = result[j]
                     break
-    report["pages"] = {"lines_tried": tried, "candidates": len(cands), "lines_found": found,
+    report["pages"] = {"lines_tried": tried, "candidates": len(cands), "lines_found": found, "gap_filled": filled,
                        "last_pdf_page": pages[max(r for r in result if r is not None)]["pdf"] if found else None}
     return result
 
@@ -544,7 +592,9 @@ def main():
             rules.append((int(lo), int(hi), prefix))
 
         def label(pg):
-            base = str(pg["printed"]) if pg["printed"] else f"pdf{pg['pdf']}"
+            if not pg["printed"]:
+                return f"pdf{pg['pdf']}"  # 접두 규칙은 인쇄 쪽 번호에만(「Ⅰ-pdf13」 같은 라벨 방지, 3층은 pdf 접두만 인식)
+            base = str(pg["printed"])
             for lo, hi, prefix in rules:
                 if lo <= pg["pdf"] <= hi:
                     return prefix + base
