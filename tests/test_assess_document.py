@@ -25,7 +25,10 @@ def test_no_read_hint_over_20_pages():
 def test_main_passes_page_count_to_hints(tmp_path, monkeypatch, capsys):
     import json
     import sys
-    pymupdf = __import__("pymupdf")
+    try:
+        import pymupdf
+    except ImportError:  # 구버전은 fitz만 있다
+        import fitz as pymupdf
     for n, want in ((18, True), (21, False)):
         pdf = tmp_path / f"d{n}.pdf"
         doc = pymupdf.open()

@@ -20,7 +20,8 @@ CSV 열(UTF-8 BOM, 첫 줄 머리글):
 치환 범위(2026-08-31): 입력 마크다운에 `hwpx_enrich.py`가 넣은 쪽 주석(`<!-- p.N ... -->`)이
 있고 행의 「원본 쪽」이 채워져 있으면 **그 쪽 구간 안에서만** 치환한다(종전에는 쪽을 읽고도
 문서 전체를 바꿔, 5쪽의 오인식 `2025`를 고치려다 다른 쪽의 진짜 `2025`까지 바꿨다).
-쪽 주석이 없거나 원본 쪽이 비어 있으면 전역 치환이며, 그때 원문이 2회 이상 맞으면
+숫자가 아닌 라벨 주석(`p.pdf15`·`p.Ⅰ-5`)은 경계가 아니라 그 쪽 본문이 앞 숫자 쪽 구간에 속하고,
+원본 쪽 칸의 `pdfN` 값은 범위 지정에 쓰지 않는다. 쪽 주석이 없거나 원본 쪽이 비어 있으면 전역 치환이며, 그때 원문이 2회 이상 맞으면
 「표기 정규화」 유형이 아닌 한 경고를 낸다.
 """
 from __future__ import annotations
@@ -33,15 +34,14 @@ import subprocess
 import sys
 
 COLS = ["문서", "원본 쪽", "원문", "수정문", "유형", "처리", "근거", "비고"]
-PAGE_MARK = re.compile(r"<!--\s*p\.([^\s>]+)[^>]*-->")
+PAGE_MARK = re.compile(r"<!--\s*p\.(\d+)\b[^>]*-->")
 
 
 def split_by_page(text: str):
     """쪽 주석 기준 구간 목록 [(쪽 번호 또는 None, 구간 문자열), ...]. 주석이 없으면 None.
 
-    hwpx_enrich가 넣는 주석은 모두 경계로 본다. 라벨이 숫자가 아니면(`p.pdf15`·`p.Ⅰ-5`·`p.목차 5`)
-    쪽 번호는 None이라 숫자 「원본 쪽」의 범위 지정에 걸리지 않는다. 경계로 보지 않으면 그 쪽 본문이
-    앞 숫자 쪽 구간에 합쳐져 치환이 번진다.
+    숫자로 시작하는 쪽 주석만 경계다. 숫자가 아닌 라벨(`p.pdf15`·`p.Ⅰ-5`·`p.목차 5`)은 경계로 보지 않아
+    그 쪽 본문은 앞 숫자 쪽 구간에 속한다(주석 없는 쪽과 같다).
     """
     marks = list(PAGE_MARK.finditer(text))
     if not marks:
@@ -49,8 +49,7 @@ def split_by_page(text: str):
     segments = [(None, text[:marks[0].start()])]
     for k, m in enumerate(marks):
         end = marks[k + 1].start() if k + 1 < len(marks) else len(text)
-        num = re.match(r"(\d+)\b", m.group(1))  # 종전 판정(앞자리 숫자 + 단어 경계)을 그대로 쓴다
-        segments.append((int(num.group(1)) if num else None, text[m.start():end]))
+        segments.append((int(m.group(1)), text[m.start():end]))
     return segments
 
 
@@ -89,9 +88,7 @@ def printed_pages(page_field: str) -> set[int]:
     `pdf7`은 인쇄 쪽 번호가 없는 쪽의 PDF 순번이라 <!-- p.N --> 라벨과 다른 좌표계다.
     인쇄 쪽 번호(순수 숫자)만 범위 지정에 쓰고, pdf 접두 값은 전역 경로로 보낸다.
     """
-    return {int(n) for n in re.findall(r"(?<![A-Za-z\d])\d+", page_field)} - {
-        int(n) for n in re.findall(r"pdf(\d+)", page_field)
-    }
+    return {int(n) for n in re.findall(r"(?<![A-Za-z\d])\d+", page_field)}
 
 
 def load_pages(pdf: str):

@@ -13,7 +13,7 @@
 
 ### 수정
 - `generate_alt_text.py`: `--map`·`--output` 부모 폴더를 만든다(Step 4 명령의 `_work-docparse/`가 없어 유료 호출 뒤 매핑·출력을 모두 잃었다).
-- `apply_corrections.py`: `p.pdfN`·`p.Ⅰ-5` 등 라벨 쪽 주석도 경계로 본다(라벨 쪽 본문이 앞 숫자 쪽에 합쳐져 치환이 번졌다). 원본 쪽 `pdf15`가 5쪽으로 새던 파싱 수정.
+- `apply_corrections.py`: 원본 쪽 `pdf15`·`pdf123`의 뒷자리가 인쇄 쪽(5·23)으로 새 엉뚱한 쪽을 조용히 치환하던 파싱 수정. 라벨 쪽 주석(`p.pdfN`·`p.Ⅰ-5`)은 경계가 아니라 그 본문이 앞 숫자 쪽 구간에 속한다는 동작을 설명문에 명시.
 - `assess_document.py`: ≤20p 시각 렌더링 힌트를 쪽수로 건다(16~20쪽·15쪽 이하 스캔본에서 빠졌다).
 - `gvision_parse.py`: 모든 쪽이 빈 결과면 출력 없이 1(실행 계약).
 - `requirements.txt`: `hwpx-tomd>=0.2.2`.
