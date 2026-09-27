@@ -42,7 +42,7 @@ LOCAL = [
 CLOUD = [
     {"name": "upstage", "modules": ["requests"], "pip": "requests",
      "keys": ["UPSTAGE_API_KEY"], "url": "https://console.upstage.ai/",
-     "note": "기준선·교차검증"},
+     "note": "교차검증·완전성"},
     {"name": "gemini", "modules": ["google.genai"], "pip": "google-genai",
      "keys": ["GEMINI_API_KEY"], "url": "https://aistudio.google.com/apikey",
      "note": "small PDF Primary·alt text 생성"},

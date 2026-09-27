@@ -35,7 +35,7 @@
 - 파서 실패/타임아웃 → 나머지로 진행 (최소 1개 성공 필요).
 - 1개만 성공 → 해당 결과를 노이즈 정리 후 `_fused_v3_<그 파서>.md`로 저장(예: Mistral만 성공하면 `_fused_v3_mistral.md`), 교차 검증 불가 경고.
 - LlamaParse v2 타임아웃 (xlarge) → ODL 폴백 또는 Upstage로 대체.
-- LlamaParse v2 402(크레딧 소진) → 텍스트 레이어가 있으면 ODL Primary 폴백(스캔본은 tier-rules 「텍스트 레이어 없음」의 Upstage Primary 폴백). 교차검증은 PyMuPDF 독립 추출로 대체 가능(본문 수치 표본 대조 + 표 산술 검증). 대형 문서는 실행 전 `python llamaparse_parse.py --credits`로 잔여 확인이 싸다 (2026-07-06 484p×10크레딧=4,840 필요, 잔여 부족 실측).
+- LlamaParse v2 402(크레딧 소진) → 텍스트 레이어가 있으면 ODL Primary 폴백(스캔본은 ODL을 쓸 수 없으므로 v2를 뺀 조합에서 Upstage를 Primary로: tier-rules 「텍스트 레이어 없음」). 교차검증은 PyMuPDF 독립 추출로 대체 가능(본문 수치 표본 대조 + 표 산술 검증). 대형 문서는 실행 전 `python llamaparse_parse.py --credits`로 잔여 확인이 싸다 (2026-07-06 484p×10크레딧=4,840 필요, 잔여 부족 실측).
 - Upstage 비동기 타임아웃 → 교차검증만 불가, Primary(v2)에 영향 없음.
 - Upstage 비동기 `completed` 후 결과 다운로드가 JSON 파싱 오류(`Expecting value: line 1 column 1`)로 실패하는 사례 있음(2026-07-21, 196p 스캔). 서버 측 파싱은 완료(과금 발생)된 상태이므로 무턱대고 전체 재실행하지 말고, 재실행 필요성(기존 산출물 유무 포함)을 먼저 판단할 것. 원인 미규명(배치 download_url 응답이 JSON이 아닌 케이스로 추정).
 - 모든 파서 실패 시 사용자에게 오류 보고.

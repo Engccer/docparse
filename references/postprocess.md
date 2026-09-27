@@ -2,6 +2,12 @@
 
 `_llamaparse.md` 또는 `_opendataloader.md`를 `_fused_v3_<파서조합>.md`(Primary 파서명으로 시작, 예 `_fused_v3_llamaparse.md`)로 복사한 뒤 LLM 교차 검증 전에 적용하는 정규식·구조 정리 패턴 모음. 파일명 규칙은 SKILL.md Step 4 참조.
 
+## 목차
+
+- LlamaParse v2 Primary 후처리 (medium~xlarge 기본)
+- ODL Primary 후처리 (폴백, 크레딧 부족 시)
+- Step 7: 최종 노이즈 정리 (Primary 무관)
+
 ## LlamaParse v2 Primary 후처리 (medium~xlarge 기본)
 
 v2 출력은 구조적으로 깔끔하지만(노이즈 적음, 헤딩 양호, 목차 정리됨) **인쇄용 책자·다이어그램 풍부 문서**에서는 아래 잔여 노이즈가 출현. 텍스트 위주 문서(법률·논문·보고서)에서는 1번만 처리하면 된다.

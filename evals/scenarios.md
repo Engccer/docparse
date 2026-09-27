@@ -24,7 +24,7 @@
 1. medium: LlamaParse v2 Primary + Upstage.
 2. macOS에 `timeout`이 없으므로 예시의 `timeout 300`을 그대로 쓰지 않는다(빼거나 대체).
 3. 종료 코드와 출력 파일 존재를 함께 확인한 뒤 Step 4로 간다.
-4. `generate_alt_text.py --map "_work-docparse/…"` 전에 `_work-docparse/`가 있어야 한다(먼저 만들거나 다른 경로). 없으면 실패함을 안다.
+4. `generate_alt_text.py --map "_work-docparse/…"`의 폴더 문제를 다룬다: 개정 전(1.4.0)은 폴더가 없으면 유료 호출 뒤 실패하므로 먼저 만든다, 개정 후(1.5.0)는 스크립트가 만든다(어느 쪽이든 정답).
 5. 이미지 placeholder를 단순 제거하지 않고 본문 다이어그램은 `(이미지: <alt>)`로 보존, 표지·로고는 제거.
 6. Upstage 내용을 실제로 반영하면 `_fused_v3_llamaparse+upstage.md`로 rename, 개별 출력은 `_work-docparse/`로 이동.
 7. Step 8 요약에 적용된 보정 규칙 절 이름과 Step 9 두 결과(추가 교차검증 필요/불필요+근거, 규칙 문서 반영 내역).

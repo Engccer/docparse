@@ -1,5 +1,7 @@
 # 변경 이력
 
+이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
+
 ## 2026-09-27 (1.5.0: 정합성 감사 반영 + 결함 수정)
 
 ### 변경
@@ -7,8 +9,8 @@
 - HWPX·HWP 상세(결정론 보강·하이브리드·Upstage 교차 조건·엔진 결함 처리·세부 절차)를 조건부 문서 `references/hwpx.md`로 모았다. SKILL.md에는 포인터 한 줄.
 - 손글씨 캐스케이드 repair 모델을 「Opus 기본, 비용 절감 시 Sonnet」으로 통일(옛 「Sonnet 권장·Opus 동급」 잔존 제거). Gemini 서술은 세대 중립(`latest` 별칭)으로, 정본은 SKILL.md small 티어 주의.
 - Step 3: macOS에는 `timeout`이 없음을 본문에 적고 대체(gtimeout 또는 빼고 수동 종료)를 둔다. `--lang`을 llamaparse·gvision에도 넘긴다.
-- Step 5: 로컬 결정론 파서 PASS 채택은 게이트 해당 없음, 스캔 양식 표 숫자는 Gemini·LlamaParse v2를 투표에서 빼고 Upstage·Mistral만. 규칙 우선순위 요약에 포맷 게이트를 넣고, 정확성 critical 3자 규칙은 포맷 게이트 PASS면 해당 없음.
-- tier-rules·postprocess에 목차. v2 이전 「Upstage Primary」 잔존 문장, 옛 Gemini 커버리지 조건, 정정 흔적을 고침. postprocess Step 7의 이미지 무조건 제거를 「장식만 제거, 본문 다이어그램 보존」으로, fusion-prompt 출력 형식이 `<br>`·`<mark>`·쪽 주석을 허용하도록.
+- Step 5: 로컬 결정론 파서 PASS 채택은 게이트 해당 없음, 스캔 수기 양식 표 숫자는 Gemini·LlamaParse v2를 투표에서 빼고 Upstage·Mistral만. 규칙 우선순위 요약에 포맷 게이트를 넣고, 정확성 critical 3자 규칙은 포맷 게이트 PASS면 해당 없음.
+- tier-rules·postprocess·hwpx에 목차. v2 이전 「Upstage Primary」 잔존 문장, 옛 Gemini 커버리지 조건, 정정 흔적을 고침. postprocess Step 7의 이미지 무조건 제거를 「장식만 제거, 본문 다이어그램 보존」으로, fusion-prompt 출력 형식이 `<br>`·`<mark>`·쪽 주석을 허용하도록.
 - 날짜·실측 경위는 같은 규칙 절의 근거 줄·gotchas로 옮겼다.
 
 ### 수정
@@ -17,9 +19,25 @@
 - `assess_document.py`: ≤20p 시각 렌더링 힌트를 쪽수로 건다(16~20쪽·15쪽 이하 스캔본에서 빠졌다).
 - `gvision_parse.py`: 모든 쪽이 빈 결과면 출력 없이 1(실행 계약).
 - `requirements.txt`: `hwpx-tomd>=0.2.2`.
-- 시험 15건 추가(`tests/`, 네트워크 없음).
+- 시험 11건 추가(`tests/`, 네트워크 없음. 기존 3건과 합쳐 14건).
 
-이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
+## 2026-09-23
+
+### 추가
+- `hwpx_enrich.py`: 쪽 번호 2차 정렬(1차 LIS가 건너뛴 쪽만 빈 쪽 채우기), 제목 3쪽 규칙, pdf 라벨 접두 제외. `tests/test_hwpx_enrich.py`(assign_pages 회귀 3건) 신설.
+
+## 2026-09-11
+
+### 추가
+- `hwpx_enrich.py --page-comment-every`: 쪽 주석을 제목 앞뿐 아니라 쪽이 바뀐 첫 본문 줄(표 첫 줄 포함) 앞에도 낸다. `--italic`: 기울임 run은 `*…*`, 문단 전체 기울임인 표 밖 줄은 `> *…*`.
+
+### 변경
+- `apply_corrections.py`: 쪽 한정 치환은 구간이 다음 주석 쪽 직전까지를 덮는 것으로 보고, 정확 범위를 먼저 시도한 뒤 경계 포함은 폴백으로.
+
+## 2026-09-03 (openai 인자 오해석 차단)
+
+### 수정
+- `openai_parse.py`: 파일을 둘 이상 주면 마지막 것만 조용히 파싱하던 것, 값 자리에 플래그가 오면 삼키던 것을 모두 거부한다.
 
 ## 2026-09-03 (파서 13종: OpenAI 편입)
 

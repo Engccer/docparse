@@ -42,6 +42,8 @@
 | **large** | PDF 61~100페이지 | LlamaParse v2 + OpenDataLoader | LlamaParse v2 |
 | **xlarge** | PDF 101페이지 이상 | LlamaParse v2 + OpenDataLoader | LlamaParse v2 |
 
+스캔본(텍스트 레이어 없음)은 진단이 쪽수 티어를 한 단계 올리고 OpenDataLoader 대신 Upstage(16쪽 이상은 Mistral도)를 씁니다.
+
 ## 설치
 
 ```bash
@@ -50,7 +52,7 @@ pip install -r requirements.txt
 
 참고:
 
-- **Java 런타임**은 OpenDataLoader 파서(large / xlarge)에만 필요합니다. `hwpx_enrich.py`·`apply_corrections.py`의 쪽 번호 정렬은 poppler(`pdftotext`·`pdfinfo`)를 씁니다(macOS `brew install poppler`). 그 외에는 선택 사항입니다.
+- **Java 런타임**은 OpenDataLoader 파서(large / xlarge)와 HWP 변환(아래 hwp2hwpx)에 필요합니다. `hwpx_enrich.py`·`apply_corrections.py`의 쪽 번호 정렬은 poppler(`pdftotext`·`pdfinfo`)를 씁니다(macOS `brew install poppler`). 그 외에는 선택 사항입니다.
 - 로컬 HWPX 파서는 `hwpx-tomd` 패키지에 의존합니다(`requirements.txt`로 설치). 이 패키지가 없는 기기에서는 hwpx_local이 설치 안내를 출력하며, Upstage로 폴백할 수 있습니다.
 - 구형 바이너리 **HWP** 파일은 HWPX로 변환한 뒤 투입합니다. 변환 도구는 별도 공개 저장소 [hwpx-automation](https://github.com/Engccer/hwpx-automation)의 `convert/`(JDK 21 기반 hwp2hwpx)를 사용합니다.
 - 모든 파서는 독립적입니다. 의존성이나 API 키가 없으면 그 파서 하나만 설치/설정 안내를 출력하고 나머지는 계속 동작합니다.
@@ -69,9 +71,9 @@ cp .env.example .env
 | 변수 | 사용 파서 | 필요 시점 |
 |----------|---------|---------------|
 | `LLAMAPARSE_API_KEY` | llamaparse (LlamaParse v2) | medium 티어 이상 (Primary) |
-| `UPSTAGE_API_KEY` | upstage | medium 이상 (교차검증) |
+| `UPSTAGE_API_KEY` | upstage | medium·스캔본 (교차검증), HWPX·Office 승격 |
 | `GEMINI_API_KEY` | gemini, 대체텍스트 생성 | small 티어 또는 대체텍스트 생성 |
-| `MISTRAL_API_KEY` | mistral | 불일치 시 / 비한국어 자료 |
+| `MISTRAL_API_KEY` | mistral | 불일치 시 / 비한국어 자료 / 스캔 16쪽 이상 |
 | `COREPIN_API_KEY` | corepin | HWP 네이티브 / 한국어 비교 |
 | `COHERE_API_KEY` | cohere | 후보 파서 비교 실행 시 |
 | `OPENAI_API_KEY` | openai | 후보 파서 비교 실행 시 |
