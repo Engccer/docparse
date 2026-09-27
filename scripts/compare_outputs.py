@@ -7,9 +7,9 @@ Output (stdout, JSON):
     {
         "primary": { "file": "...", "lines": 1850, "headings": 90, "tables": 45 },
         "secondaries": [ ... ],
-        "gaps": [
-            { "heading": "## 3. 단계별 도입 절차", "in_primary": false, "in": ["upstage", "llamaparse"] }
-        ],
+        "gap_count": 3,
+        "gaps_sample": [ ... ],   # 처음 10개
+
         "recommendation": "primary_only" | "patch_needed" | "full_fusion",
         "reasons": ["..."]     # 추천 근거(표 개수·실제 글자 수·heading 갭·줄 수)
     }

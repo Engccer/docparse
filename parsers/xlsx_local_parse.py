@@ -1,4 +1,4 @@
-"""XLSX 로컬 결정론 파서 (docparse Tier 0): openpyxl로 외부 API 없이 추출.
+"""XLSX 로컬 결정론 파서 (docparse xlsx 티어): openpyxl로 외부 API 없이 추출.
 
 다른 *_parse.py와 동일한 인터페이스:
   python xlsx_local_parse.py "<파일.xlsx>"        → <파일>_xlsxlocal.md

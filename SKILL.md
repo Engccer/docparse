@@ -7,7 +7,7 @@ description: >
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
@@ -26,7 +26,7 @@ metadata:
 
 ## 패키지 구조
 
-자기 완결적(self-contained) 패키지. `~/.claude/skills/docparse` 심링크가 가리키는 폴더 하나만 동기화하면 모든 디바이스에서 완전 동작. 실행 시 이 경로를 `<스킬루트>`로 부른다. <!-- sanitize: allow 설치 경로 안내 -->
+`~/.claude/skills/docparse` 심링크가 가리키는 폴더 하나가 스킬 전체다. 실행 시 이 경로를 `<스킬루트>`로 부른다. 폴더 밖 준비물(pip 패키지·Java·poppler·HWP 변환용 `hwpx-automation` 스킬)은 README 설치 절과 `scripts/check_env.py`가 안내한다. <!-- sanitize: allow 설치 경로 안내 -->
 
 ### 파서 (`parsers/`)
 
@@ -44,7 +44,7 @@ metadata:
 | `corepin_parse.py` | `_corepin.md` | COREPIN_API_KEY | AI3 OSS 엔진 라우터(텍스트PDF→opendataloader, HWP/HWPX→kordoc, Office→markitdown, **스캔→AI3 자체 OCR**) + 한국어 필터 SLM. 18종 단일 API, 장당 2원. **스캔 양식에서 표 구조 소실 검증됨** → Primary 부적합, 보조/비교용 |
 | `cohere_parse.py` | `_cohere.md` | COHERE_API_KEY | `parse-v5.0`(Cohere Parse, 2.3B VLM·8,192 토큰). 마크다운 + HTML 표 + 이미지 설명. **한국어가 9개 안정 지원 언어에 포함**, $1.50/1,000쪽(트라이얼 키 월 1,000콜 무료). ⚠️ 엔드포인트가 **이미지만** 받아 PDF는 PyMuPDF 렌더 후 **쪽당 1회 호출**(쪽수=호출수=과금). 쪽당 출력이 8,192 토큰에 닿으면 잘릴 수 있어 근접 시 경고. **아직 실측 등급 없음** — 티어 배정 없이 후보로만 존재 |
 | `openai_parse.py` | `_openai.md` | OPENAI_API_KEY | 기본 `gpt-5.6-terra`(GPT-5.6 계열 중간 티어. 대량·저비용은 `--model gpt-5.6-luna`, 최난도 스캔은 `gpt-5.6-sol`). **OpenAI에는 전용 파서·OCR 엔드포인트가 없어** Responses API에 PDF·이미지를 넣고 범용 멀티모달 모델이 마크다운을 쓰게 하는 방식이다(**실패 양상은 Gemini와 같은 계열** — 장문 요약화). 그래서 PDF를 기본 8쪽 구간으로 나눠 호출하고(`--pages-per-call`, PyMuPDF 필요) 구간 주석을 남긴다. `--effort`·`--detail`·`--verbosity` 조절 가능. Office(.docx·.pptx·.xlsx)도 받지만 **텍스트만 추출**되므로 로컬 결정론 파서가 거부·승격할 때의 후보다(HWPX는 미지원). 응답이 completed가 아니면(출력 상한 도달 등) 저장하지 않는다. **아직 실측 등급 없음** — 티어 배정 없이 후보로만 존재 |
-| `gvision_parse.py` | `_gvision.md` | GOOGLE_VISION_API_KEY **또는** GV_TOKEN+GV_PROJECT | **비-LLM OCR + 단어별 confidence**. 수기 손글씨 답안 등 오기 보존 critical 문서 전용. 자동교정·인명환각 없이 literal 추출, 저신뢰(<0.90) 단어를 페이지별로 표기 → 시각 판독 표적 자동 생성. PDF는 PyMuPDF로 렌더 후 페이지별 호출. 무료 1,000p/월. **calibration 실증(2026-06-14)**. reading order·체크박스는 약점(v2 병행) |
+| `gvision_parse.py` | `_gvision.md` | GOOGLE_VISION_API_KEY **또는** GV_TOKEN+GV_PROJECT | **비-LLM OCR + 단어별 confidence**. 수기 손글씨 답안 등 오기 보존 critical 문서 전용. 자동교정·인명환각 없이 literal 추출, 저신뢰(<0.90) 단어를 페이지별로 표기 → 시각 판독 표적 자동 생성. PDF는 PyMuPDF로 렌더 후 페이지별 호출. 무료 1,000p/월. confidence calibration 실증. reading order·체크박스는 약점(v2 병행) |
 
 ### 스크립트 (`scripts/`)
 
@@ -59,17 +59,18 @@ metadata:
 | `hwpx_enrich.py` | HWPX 결정론 보강: hwpx-tomd 출력에 **개요 스타일→`#` 제목**, **취소선 `~~`·강조색 `<mark>`**(charPr), **인쇄 PDF 실제 쪽 `<!-- p.N -->`**(pdftotext 쪽 텍스트와 전역 LIS 정렬), 간지·머리말 잔재 삭제를 문단 단위 정확 일치로만 입힌다 |
 | `apply_corrections.py` | **정본 수정 목록 CSV** 적용기: 오탈자·개인정보·표기 정규화를 손으로 고치지 않고 CSV(문서·원본 쪽·원문·수정문·유형·처리·근거)로 적용·검증(원문 0회면 오류, 치환 후 잔존 검사, 원본 쪽 자동 채움). 정본을 재생성해도 같은 CSV로 같은 결과 |
 
-> **평가 도구는 별도 스킬로 이관**(2026-08-29). 파서끼리 견주고 등급을 매기고 그 판정을 장부에 남기는 일은 docparse가 아니라 `parser-eval` 스킬이 한다. `score_transcription.py`(정본 대비 CER/WER 정량 채점)와 `diff_fidelity.py`(LLM ↔ OCR 발산 토큰 → 육안 판독 표적)는 그쪽 `scripts/`로 옮겼다. ⚠️ **`parser-eval`은 아직 저자 로컬 스킬이라 docparse와 함께 배포되지 않는다** — 외부 설치본에는 두 스크립트가 없다. 파싱 방법과 프롬프트는 그대로 docparse가 정본이고, 옮긴 것은 견주고 채점하는 절차뿐이다.
+> **평가 도구는 `parser-eval` 스킬 소관**: 파서끼리 견주고 등급을 매기고 그 판정을 장부에 남기는 일, `score_transcription.py`(정본 대비 CER/WER 정량 채점)와 `diff_fidelity.py`(LLM ↔ OCR 발산 토큰 → 육안 판독 표적)는 그 스킬에 있다. ⚠️ **`parser-eval`은 저자 로컬 스킬이라 docparse와 함께 배포되지 않고, 모든 머신에 있지도 않다** — 없으면 두 스크립트를 쓰는 단계는 tier-rules에 적힌 대체 경로로 한다. 파싱 방법과 프롬프트는 docparse가 정본이다.
 
 ### 참조 (`references/`)
 
 | 파일 | 트리거 |
 |------|--------|
 | `tier-rules.md` | 스캔/수기/시험지/합본 PDF 등 티어 외 보정 규칙이 필요할 때. **각 절의 `*근거:*` 줄이 그 규칙의 확신도(n=문서 수)를 말한다** — `n=1`·`미표기` 규칙이 이번 문서와 어긋나면 규칙 쪽을 먼저 의심한다 |
-| `handwriting-cascade.md` | **손글씨 충실 전사 최고 방법**: Vision→Claude(Opus) 캐스케이드가 챔피언(정본 대조 ~98.2%). 모델 비교(단독: Opus>Sonnet +1.0%p / 캐스케이드: +0.3%p, Gemma·Haiku 탈락)·클린 repair 프롬프트·속도. 5-subset 정성 + 3반 토너먼트 CER/WER 정량(2026-06-23) |
+| `handwriting-cascade.md` | **손글씨 충실 전사 최고 방법**: Vision→Claude(Opus) 캐스케이드가 챔피언(정본 대조 ~98.2%). 모델 비교(단독: Opus>Sonnet +1.0%p / 캐스케이드: +0.3%p, Gemma·Haiku 탈락)·클린 repair 프롬프트·속도. 5-subset 정성 + 3반 토너먼트 CER/WER 정량 |
+| `hwpx.md` | HWPX·HWP 파일(`format`이 `hwpx`·`hwp`)일 때: 보강·하이브리드·Upstage 교차 조건·엔진 결함 처리·HWP 변환 |
 | `handwriting-ocr-engines.md` | 손글씨 위주 스캔 문서 충실 전사용 OCR 엔진 선택(Vision·Azure·CLOVA·TrOCR·Tesseract 등 비교·언어·PII·비용) |
 | `postprocess.md` | LlamaParse v2 후처리 정규식·ODL 자동 정리·Step 7 최종 노이즈 정리 |
-| `gotchas.md` | 주의사항·에러 처리·설치 |
+| `gotchas.md` | 주의사항·에러 처리·설치. 파서가 실패하거나 결과가 이상할 때 |
 | `fusion-prompt.md` | full fusion 상세 지침 (대규모 재작성 시) |
 | `custom-prompts/accessible.txt` | `llamaparse_parse.py --instructions`에 주입할 접근성 우선 파싱 지시 |
 
@@ -85,9 +86,9 @@ metadata:
 | **LlamaParse v2** | A | A | A | A+ | **A+** | 10크레딧/p, 스캔 수기 양식 열 이동 1건 |
 | **OpenDataLoader** | A- | A+ (100%) | B+ | B (h6 경향) | A | PDF·텍스트 레이어 전용, 이미지 설명 없음 |
 | **Mistral** | B+ | A+ (100%) | A- | **B+ (ocr-4 헤딩 생성)** | A- | 노이즈 후처리 필수, OCR 글자 드리프트, 수기 과잉교정 |
-| **Gemini** (3.5/thinking) | B-(≤15p) | 소형 A / **장문 요약화 F** | A+ | A+ | A+ 포맷 / C 스캔 열(시프트 잔존) | **장문 Primary 금지**(요약화), ≤15p만. 체크박스·한글이름 A(thinking ON 보조). 기본 `thinking_budget=0` |
-| **Cohere Parse** (parse-v5.0) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 0건.** 이 줄의 등급은 평가 전까지 비운다(공급사 주장 ParseBench 79.2 > Mistral OCR 4 74.5는 근거가 아니다). 이미지 입력 전용(PDF는 쪽당 호출), 쪽당 8,192 토큰 상한, confidence 미제공 |
-| **OpenAI** (gpt-5.6) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 0건.** 이 줄의 등급은 평가 전까지 비운다(공급사 벤치마크는 근거가 아니다). 전용 파서가 아닌 범용 LLM이라 **구조적으로 Gemini와 같은 요약화 위험**을 안고 있고, 쪽 구간 분할은 완화일 뿐 제거가 아니다. Office(.docx·.pptx·.xlsx)는 받지만 텍스트만 추출된다(쪽 이미지 미사용). HWPX는 형식 미지원 |
+| **Gemini** (latest/thinking) | B-(≤15p) | 소형 A / **장문 요약화 F** | A+ | A+ | A+ 포맷 / C 스캔 열(시프트 잔존) | **장문 Primary 금지**(요약화), ≤15p만. 체크박스·한글이름 A(thinking ON 보조). 기본 `thinking_budget=0` |
+| **Cohere Parse** (parse-v5.0) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 0건.** 이 줄의 등급은 평가 전까지 비운다(공급사 주장 ParseBench 79.2 > Mistral OCR 4 74.5는 근거가 아니다). confidence 미제공. 입력 제약은 위 파서 표 |
+| **OpenAI** (gpt-5.6) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 0건.** 이 줄의 등급은 평가 전까지 비운다(공급사 벤치마크는 근거가 아니다). 전용 파서가 아닌 범용 LLM이라 **구조적으로 Gemini와 같은 요약화 위험**을 안고 있고, 쪽 구간 분할은 완화일 뿐 제거가 아니다. 입력 제약(Office는 텍스트만, HWPX 미지원)은 위 파서 표 |
 | **Google Vision** (수기) | A-(수기 전용) | A(손글씨) | **A (오기 보존)** | F(미생성) | C(미지원) | **단어별 confidence 제공(평균 0.95+, 저신뢰 ~7%·잘 calibrated)**. 수기 오기 보존·환각 0. reading order 흐트러짐·체크박스 판정 불안정·클라우드 PII |
 
 ## 실행 워크플로우
@@ -110,7 +111,7 @@ python "<스킬루트>/scripts/check_env.py"
 python "<스킬루트>/scripts/assess_document.py" "<파일경로>"
 ```
 
-JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 티어별 파서 전략 결정. `table_hint: true`는 벡터 괘선 격자가 감지됐다는 뜻으로, 텍스트 레이어가 있으면 `recommended_parsers` 선두에 `pdfplumber`가 온다(Step 2 Tier 0). `recommended_parsers`는 Step 2 기본 티어 표와 같은 값이다(표가 바뀌면 스크립트도 바꾼다).
+JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 티어별 파서 전략 결정. `table_hint: true`는 벡터 괘선 격자가 감지됐다는 뜻으로, 텍스트 레이어가 있으면 `recommended_parsers` 선두에 `pdfplumber`가 온다(Step 2 Tier 0). **텍스트 레이어가 없으면(스캔본) `tier`는 쪽수 티어보다 한 단계 위다**(12쪽 스캔본 → medium). `recommended_parsers`는 Step 2 기본 티어 표에 세 가지 보정을 더한 값이다: 스캔본은 ODL을 빼고 Upstage(small 제외)·Mistral(large 이상)을 더한다, `--lang`이 ko가 아니면 Mistral을 더한다, docx·xlsx는 로컬 파서 뒤에 승격 후보(upstage·llamaparse)를 붙인다. 표나 보정이 바뀌면 스크립트도 바꾼다.
 
 `signals`는 결정론적으로 잴 수 있는 것만 담는다: `text_pages`(표본 쪽 중 텍스트가 있는 쪽 수. 표본은 앞 3쪽 + 문서 전체 분산 최대 12쪽), `pua_per_10k`(텍스트 레이어 1만 자당 PUA 코드포인트. ≥100이면 수식 시험지 규칙), `latin_ratio`(문자 중 라틴 비율. ≥0.5면 Mistral Primary 고려 조건). `rule_hints`는 **진단만으로 걸린** tier-rules 절 이름이며, 비어 있다는 것은 "해당 없음"이 아니라 "진단으로는 판정할 수 없는 절이 남아 있다"는 뜻이다. 손글씨·합본·병합셀·인구통계 교차표는 Step 2 보정 규칙 목록에서 에이전트가 직접 판정한다.
 
@@ -129,25 +130,32 @@ JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 
 | **large** | PDF 61~100p | LlamaParse v2 + ODL | LlamaParse v2 |
 | **xlarge** | PDF 101p+ | LlamaParse v2 + ODL | LlamaParse v2 |
 
-**Tier 0 (결정론 우선 게이트, 2026-08-10)**: `table_hint: true`(벡터 괘선 격자) + `has_text_layer: true`이고 **목표 산출물이 산문이 아니라 표 데이터**(시간표·명렬표·집계표·주간학습안내 등 행정 문서)면, 페이지 수 티어보다 먼저 `pdfplumber_parse.py`(로컬·무료·비-LLM)를 시도한다. 원본이 명시적일 때(그려진 격자 + 임베딩된 글자) LLM 추론은 순수한 하방 위험이기 때문이다. 격자 모델(extract_tables)과 좌표 모델(extract_words)의 셀 단위 양방향 대조 자가검증이 내장돼 열 배정 오류까지 기계로 잡히고, 구현을 공유하지 않는 PyMuPDF find_tables 독립 2엔진 교차 투표가 한 겹 더해져 격자·좌표가 같은 상류 결함을 공유하는 오류까지 막는다(육안 대조 없이 검증이 닫힘). **PASS면 그대로 채택(`_fused_v3_pdfplumber.md`)하고 Step 5~7의 LLM 교차 검증은 생략 가능**, 경고(셀 불일치·미배정 단어·병합 의심 셀·교차 엔진 불일치·표 미검출)가 하나라도 뜨면 파서가 출력 파일을 만들지 않으므로 기본 티어 표로 승격한다. 적용 경계·상세는 `references/tier-rules.md`의 "괘선 정형 표 PDF" 절. 괘선 없는 정렬 표는 opt-in `--strategy text`로 시도할 수 있다(2026-08-11): 두 엔진 text 전략 교차 투표 + 단어↔셀 대조가 게이트이며, 괘선이 없으면 열 구획 정보가 문서에 없으므로 PASS의 의미는 "단어 보존 + 2엔진 구조 수렴"까지다(상세는 tier-rules).
+small~xlarge의 쪽수는 텍스트 레이어가 있는 PDF 기준이다. 스캔본은 Step 1의 한 단계 올린 티어와 tier-rules 「텍스트 레이어 없음」 절을 따른다.
+
+**Tier 0 (결정론 우선 게이트)**: `table_hint: true`(벡터 괘선 격자) + `has_text_layer: true`이고 **목표 산출물이 산문이 아니라 표 데이터**(시간표·명렬표·집계표·주간학습안내 등 행정 문서)면, 페이지 수 티어보다 먼저 `pdfplumber_parse.py`(로컬·무료·비-LLM)를 시도한다. 원본이 명시적일 때(그려진 격자 + 임베딩된 글자) LLM 추론은 순수한 하방 위험이기 때문이다. 격자↔좌표 자가검증과 PyMuPDF 독립 2엔진 교차 투표가 셀 위치까지 기계로 대조한다.
+
+- **PASS**: 그대로 채택(`_fused_v3_pdfplumber.md`)하고 Step 5~7의 파서 교차 검증을 생략한다.
+- **경고**(셀 불일치·미배정 단어·병합 의심 셀·교차 엔진 불일치·표 미검출): 파서가 출력 파일을 만들지 않으므로 기본 티어 표로 승격한다.
+- 괘선 없는 정렬 표는 opt-in `--strategy text`로 시도할 수 있고, PASS의 의미는 "단어 보존 + 2엔진 구조 수렴"까지다.
+- 검증 원리·적용 경계는 `references/tier-rules.md`의 "괘선 정형 표 PDF" 절.
 
 **HWPX·HWP**: `format`이 `hwpx`·`hwp`면 `references/hwpx.md`를 읽는다(hwpx_local 우선 근거, 결정론 보강, 초안 HWP + 인쇄 PDF 하이브리드, Upstage 교차 조건, 엔진 결함 처리, HWP 변환).
 
-**Office 로컬 티어 (XLSX·DOCX, 2026-08-11)**: XLSX·DOCX는 셀 값·병합 범위·헤딩 스타일이 파일 XML에 명시된 포맷이라 Tier 0 철학(원본이 명시적이면 LLM 추론은 하방 위험)이 그대로 적용된다. `xlsx_local_parse.py`(openpyxl + 원시 XML 값 멀티셋 교차 검증)·`docx_local_parse.py`(python-docx + document.xml 전수 recall 대조)를 먼저 쓰고, **PASS면 그대로 채택**(`_fused_v3_xlsxlocal.md`/`_fused_v3_docxlocal.md`, LLM 교차 검증 생략 가능). 거부(검증 불일치·텍스트박스·각주·중첩 표) 시 Upstage·LlamaParse로 승격한다. 실측(2026-08-11): 실제 법률안 DOCX 토큰 1,063건 완전 일치 PASS, 병합 263범위 동아리 명부 XLSX PASS, 각주 있는 보고서·텍스트박스 픽스처는 정확히 거부.
+**Office 로컬 티어 (XLSX·DOCX)**: XLSX·DOCX는 셀 값·병합 범위·헤딩 스타일이 파일 XML에 명시된 포맷이라 Tier 0 철학(원본이 명시적이면 LLM 추론은 하방 위험)이 그대로 적용된다. `xlsx_local_parse.py`(openpyxl + 원시 XML 값 멀티셋 교차 검증)·`docx_local_parse.py`(python-docx + document.xml 전수 recall 대조)를 먼저 쓰고, **PASS면 그대로 채택**(`_fused_v3_xlsxlocal.md`/`_fused_v3_docxlocal.md`, Step 5~7의 파서 교차 검증 생략). 거부(검증 불일치·텍스트박스·각주·중첩 표) 시 Upstage·LlamaParse로 승격한다. 근거·경계는 tier-rules 「XLSX·DOCX」 절.
 
-**Primary 선택 원칙**: 자동화로 교정 불가능한 결함이 적은 파서를 Primary로. LlamaParse v2가 medium~xlarge 최적 (목차 정리, 표 열 정확, 노이즈 0건, LaTeX 0건). 크레딧 부족 시 ODL Primary + Upstage 교차검증으로 폴백. **Mistral ocr-4는 헤딩 구조 생성이 추가돼(2026-06-28) 텍스트PDF 폴백 Primary 후보로 격상**(187p·17섹션 완전 전사 검증)되나, 노이즈 185건·OCR 글자 드리프트(`장애전형→장애인형`) 후처리가 전제다.
+**Primary 선택 원칙**: 자동화로 교정 불가능한 결함이 적은 파서를 Primary로. LlamaParse v2가 medium~xlarge 최적 (목차 정리, 표 열 정확, 노이즈 0건, LaTeX 0건). 크레딧 부족 시 ODL Primary + Upstage 교차검증으로 폴백. **Mistral ocr-4는 헤딩 구조를 생성해 텍스트PDF 폴백 Primary 후보**이나, 노이즈·OCR 글자 드리프트 후처리가 전제다(tier-rules 「Mistral ocr-4 헤딩 생성」).
 
-**small 티어 Gemini 주의 (2026-06-28)**: `gemini-flash-latest`는 thinking 모델 `gemini-3.5-flash`다. thinking이 켜지면 **장문(≳20p)에서 전사 대신 요약으로 빠져** 본문을 조용히 버리고 완결 문서처럼 위장한다(187p 실측, 부록 M). `gemini_parse.py`는 이를 막기 위해 **기본 `thinking_budget=0` + `max_output_tokens=65536`**으로 충실 전사한다. **Gemini를 장문 Primary로 쓰지 말 것**(small ≤15p만). 단 thinking을 끄면 수기 자필 체크박스 판독이 약해지므로, 체크박스·한글이름 등 정밀 판독이 필요한 **보조 패치**에는 `gemini_parse.py <파일> --thinking`으로 켜서 별도 호출한다.
+**small 티어 Gemini 주의** (Gemini 규칙의 정본. 다른 문서의 Gemini 서술은 이 절을 따른다): `gemini-flash-latest`는 thinking 모델을 가리키는 서버 별칭이다(세대는 check-stack-updates가 감시). thinking이 켜지면 **장문(≳20p)에서 전사 대신 요약으로 빠져** 본문을 조용히 버리고 완결 문서처럼 위장한다(근거는 gotchas.md). `gemini_parse.py`는 이를 막기 위해 **기본 `thinking_budget=0` + `max_output_tokens=65536`**으로 충실 전사한다. **Gemini를 장문 Primary로 쓰지 말 것**(small ≤15p만). 단 thinking을 끄면 수기 자필 체크박스 판독이 약해지므로, 체크박스·한글이름 등 정밀 판독이 필요한 **보조 패치**에는 `gemini_parse.py <파일> --thinking`으로 켜서 별도 호출한다.
 
 #### 보정 규칙 (티어 결정 후 적용)
 
-`references/tier-rules.md`의 판정 절 전부다(2026-08-31 목록 완성. 종전 10개만 적혀 있어 나머지 절은 도달 경로가 없었다). **한 문서가 여러 절에 동시에 걸리는 것이 정상**이며, 충돌은 tier-rules 첫머리의 「규칙 우선순위」로 푼다(금지 > 필수 추가 > 권장). 아래 목록을 위에서 아래로 훑어 **절마다 「적용 / 해당 없음」을 판정하고 Step 8 요약에 적용된 절만 이름으로 적는다**(적지 않은 절은 판정하지 않은 것이 아니라 해당 없음으로 판정한 것이어야 한다). `assess_document.py`의 `rule_hints`가 자동으로 잡아 주는 절은 ◇ 표시.
+`references/tier-rules.md`의 판정 절 전부다. **한 문서가 여러 절에 동시에 걸리는 것이 정상**이며, 충돌은 tier-rules 첫머리의 「규칙 우선순위」로 푼다(포맷 게이트 > 금지 > 필수 추가 > 권장). 아래 목록을 위에서 아래로 훑어 **절마다 「적용 / 해당 없음」을 판정하고 Step 8 요약에 적용된 절만 이름으로 적는다**(적지 않은 절은 판정하지 않은 것이 아니라 해당 없음으로 판정한 것이어야 한다). `assess_document.py`의 `rule_hints`가 자동으로 잡아 주는 절은 ◇ 표시.
 
 - ◇ 괘선 정형 표 PDF + 목표 산출물이 표 데이터 (Tier 0: pdfplumber 결정론 우선)
 - XLSX·DOCX (Office 로컬 결정론 파서) — 기본 티어 표의 해당 행
-- ◇ 텍스트 레이어 없음 (스캔/이미지 PDF). ◇ 부분 스캔 의심(표본 일부만 텍스트)
+- ◇ 텍스트 레이어 없음 (스캔/이미지 PDF: 진단이 쪽수 티어를 한 단계 올린다). ◇ 부분 스캔 의심(표본 일부만 텍스트)
 - ◇ 영어 비율 ≥50% / 정형화 양식 (Mistral Primary 고려 조건) + Mistral ocr-4 헤딩 생성(폴백 Primary)
-- Mistral 추가 조건 (ODL↔Upstage 불일치·비한국어·스캔 large 이상) + ◇ 비한국어 문서 조건 정밀화(`--lang`≠ko)
+- Mistral 추가 조건 (Primary↔보조 불일치·비한국어·스캔 large 이상) + ◇ 비한국어 문서 조건 정밀화(`--lang`≠ko)
 - 크레딧 부족 시 폴백 (ODL Primary + Upstage)
 - ◇ ODL Primary 채택 전 본문 숫자 검증 (텍스트 레이어 있어도)
 - 인쇄용 책자 PDF의 여러 쪽에 걸친 표·병합셀
@@ -160,16 +168,19 @@ JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 
 - 시험지·고사 원안·평가지 (옵션 텍스트 critical) + ◇ 수식이 있는 시험지(PUA 밀도 ≥100: LlamaParse v2 유일 Primary)
 - has_text_layer: true인데 pdftotext만 한글을 못 뽑는 경우 (스캔으로 오판 금지)
 - ◇ ≤20p 소형 PDF (Read 시각 렌더링 = ground truth)
-- 비PDF 포맷 (PPTX·이미지·HWP 절차·호환성 매트릭스)
-- 의무기록·법률문서·계약서 (정확성 critical, 티어 무관 3자 교차: 「텍스트 레이어 없음」 절 말미)
+- 비PDF 포맷 (PPTX·이미지·호환성 매트릭스. HWP·HWPX 절차는 `references/hwpx.md`)
+- 의무기록·법률문서·계약서 (정확성 critical, 페이지 티어 무관 3자 교차. 포맷 게이트 PASS면 해당 없음: 「텍스트 레이어 없음」 절 말미)
 
 ### Step 3: 파서 실행
 
-선택된 파서만 병렬 실행. xlarge는 `timeout 600`, 그 외 `timeout 300`. `< /dev/null`로 대화형 프롬프트 방지.
+선택된 파서만 병렬 실행. 제한 시간은 xlarge 600초, 그 외 300초. `< /dev/null`로 대화형 프롬프트 방지. `--lang`이 ko가 아니면 `llamaparse_parse.py`(`--lang <코드>`)·`gvision_parse.py`(`--lang <코드>,ko` 쉼표 목록)에도 넘긴다.
 
-**실행 계약(2026-08-31)**: 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이다. 오류·빈 결과·검증 실패·부분 결과(Gemini 토큰 절단, Upstage 배치 누락, Mistral 쪽수 불일치, Vision 페이지 호출 실패)는 출력 없이 1로 끝나며, 실행 시작 시 같은 이름의 이전 출력을 먼저 지운다. 따라서 **Step 4로 넘어가기 전에 종료 코드와 출력 파일 존재를 함께 확인**한다. 종료 코드가 0이 아닌데 파일이 있다면 그 파일은 이번 실행의 것이 아니다.
+**실행 계약**: 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이다. 오류·빈 결과·검증 실패·부분 결과(Gemini 토큰 절단, Upstage 배치 누락, Mistral 쪽수 불일치, Vision 페이지 호출 실패·전 쪽 빈 결과)는 출력 없이 1로 끝나며, 실행 시작 시 같은 이름의 이전 출력을 먼저 지운다. 따라서 **Step 4로 넘어가기 전에 종료 코드와 출력 파일 존재를 함께 확인**한다. 종료 코드가 0이 아닌데 파일이 있다면 그 파일은 이번 실행의 것이 아니다.
 
-아래 예시는 bash(Git Bash·Linux·macOS) 기준이다. PowerShell에서는 `timeout`·`< /dev/null`·`&`·`wait`가 없으므로 `$null | python ...`으로 stdin을 닫고, 병렬은 `Start-Job`/`Start-Process -Wait` 또는 순차 실행으로 대체한다(macOS의 `timeout` 부재는 gotchas.md).
+아래 예시는 bash(Git Bash·Linux) 기준이다.
+
+- **macOS**: `timeout` 명령이 없어 그대로 치면 exit 127로 파서가 실행조차 되지 않는다. coreutils의 `gtimeout`이 있으면 `timeout`을 그것으로 바꾸고, 없으면 `timeout N`을 빼고 실행한 뒤 제한 시간을 넘긴 파서는 수동으로 끈다.
+- **PowerShell**: `timeout`·`< /dev/null`·`&`·`wait`가 없으므로 `$null | python ...`으로 stdin을 닫고, 병렬은 `Start-Job`/`Start-Process -Wait` 또는 순차 실행으로 대체한다.
 
 ```bash
 # medium 티어 예
@@ -209,7 +220,13 @@ timeout 300 python <스킬루트>/parsers/upstage_parse.py "<파일.hwpx>" < /de
 
 ### Step 4: Primary base 생성
 
-**최종 산출 파일명 규칙** (fused에 어느 파서를 통합했는지 파일명으로 드러낸다): 최종 fused 파일은 `<파일명>_fused_v3_<파서조합>.md`로 명명한다. `<파서조합>`은 **실제로 이 결과물에 내용이 반영된 파서만** Primary부터 나열하고 `+`로 잇는다. 파서 토큰은 개별 출력 접미사와 동일하게 쓴다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`pdfplumber`·`xlsxlocal`·`docxlocal`·`corepin`·`gvision`·`cohere`·`openai`. 단순 대조만 하고 텍스트를 병합하지 않은 파서는 넣지 않는다(파일명이 곧 "무엇을 합쳤는가"의 기록이므로). 예: LlamaParse Primary에 Upstage heading·메타데이터를 패치하면 `_fused_v3_llamaparse+upstage.md`, Mistral 단독 채택이면 `_fused_v3_mistral.md`, hwpx_local 단독이면 `_fused_v3_hwpxlocal.md`. **Primary base를 만들 때는 Primary 파서명만 붙이고, Step 6에서 보조 파서 내용을 실제로 반영할 때마다 파일명에 `+<파서>`를 덧붙여 rename한다.**
+**최종 산출 파일명 규칙** (fused에 어느 파서를 통합했는지 파일명으로 드러낸다):
+
+- 최종 fused 파일은 `<파일명>_fused_v3_<파서조합>.md`다.
+- `<파서조합>`은 **실제로 이 결과물에 내용이 반영된 파서만** Primary부터 나열하고 `+`로 잇는다. 단순 대조만 하고 텍스트를 병합하지 않은 파서는 넣지 않는다(파일명이 곧 "무엇을 합쳤는가"의 기록이므로).
+- 파서 토큰은 개별 출력 접미사와 같다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`pdfplumber`·`xlsxlocal`·`docxlocal`·`corepin`·`gvision`·`cohere`·`openai`.
+- 예: LlamaParse Primary에 Upstage heading·메타데이터를 패치하면 `_fused_v3_llamaparse+upstage.md`, Mistral 단독 채택이면 `_fused_v3_mistral.md`, hwpx_local 단독이면 `_fused_v3_hwpxlocal.md`.
+- **Primary base를 만들 때는 Primary 파서명만 붙이고, Step 6에서 보조 파서 내용을 실제로 반영할 때마다 파일명에 `+<파서>`를 덧붙여 rename한다.**
 
 #### LlamaParse v2 Primary
 
@@ -241,11 +258,11 @@ python <스킬루트>/scripts/normalize_odl.py "<odl_output.md>" "<파일명>_fu
 
 ### Step 5: 데이터 무결성 게이트
 
-Primary 선정 직후, LLM 교차 검증 전에 반드시 실행. **표에 숫자 데이터가 있는 문서에서는 생략 불가.**
+Primary 선정 직후, LLM 교차 검증 전에 반드시 실행. **표에 숫자 데이터가 있는 문서에서는 생략 불가.** 단 로컬 결정론 파서(Tier 0·XLSX·DOCX·HWPX)의 PASS를 그대로 채택한 경우는 자가검증이 이 게이트를 대신하므로 해당 없다.
 
 1. **산술 검증**: 모든 표의 숫자 행 합계 검증 (`개별항목 합 == 소계` 등). 비용 0.
 2. **불일치 발견 시**: 보조 파서에서 해당 표 숫자를 추출하여 셀 단위 대조. 포맷이 지저분해도 숫자 값 자체는 추출 가능("포맷 품질 ≠ 데이터 정확도").
-3. **셀 위치 비교 (가장 중요, 생략 불가)**: 산술 검증과 무관하게 **항상** 수행. 합계가 맞아도 카테고리가 뒤바뀔 수 있음. 2파서 일치 시 채택, 불일치 시 3번째 파서로 다수결. **Gemini 표 데이터는 다수결 투표에서 제외** (스캔 양식 열 배정 신뢰도 D).
+3. **셀 위치 비교 (가장 중요, 생략 불가)**: 산술 검증과 무관하게 **항상** 수행. 합계가 맞아도 카테고리가 뒤바뀔 수 있음. 2파서 일치 시 채택, 불일치 시 3번째 파서로 다수결. **스캔 양식 표 숫자에서는 Gemini·LlamaParse v2를 투표에서 제외**하고 Upstage·Mistral만 쓴다(열 이동 기록, tier-rules 「스캔 문서 + 표에 숫자 데이터」). 그 둘이 갈리면 세 번째 표는 해당 쪽 시각 판독이다.
 4. **불일치 해소 불가 시**: 3자 교차 검증용 추가 파서 실행 (Mistral).
 
 ⚠️ **산술 검증만으로는 열 이동을 탐지할 수 없다.** Step 5.3 셀 위치 비교가 유일한 방어선.
@@ -284,13 +301,13 @@ python <스킬루트>/scripts/compare_outputs.py "<primary.md>" "<upstage.md>"
 mkdir -p "<파일 디렉토리>/_work-docparse"
 mv "<파일명>_llamaparse.md" "<파일명>_upstage.md" "<파일 디렉토리>/_work-docparse/"
 # 사용된 경우 _gemini.md, _mistral.md, _opendataloader.md, _hwpxlocal.md, _pdfplumber.md,
-# _xlsxlocal.md, _docxlocal.md, _gvision.md, _corepin.md, _cohere.md, _openai.md도 이동
+# _xlsxlocal.md, _docxlocal.md, _gvision.md, _corepin.md, _cohere.md, _openai.md, _with_alt.md도 이동
 # (로컬 티어 단독 채택이면 그 출력을 _fused_v3_<토큰>.md로 채택)
 ```
 
 ### Step 9: 사후 절차: 추가 교차검증 검토 + 학습 반영 (생략 불가)
 
-fused 산출로 작업이 끝나지 않는다. 매 파싱 작업의 끝에 아래 두 절차를 수행하고, 그 결과를 Step 8의 요약 출력에 한 줄씩 포함한다(2026-06-12 신설).
+fused 산출로 작업이 끝나지 않는다. 매 파싱 작업의 끝에 아래 두 절차를 수행하고, 그 결과를 Step 8의 요약 출력에 한 줄씩 포함한다.
 
 **9a. 추가 파서 교차검증 필요성 검토.** 다음 중 하나라도 해당하면 추가 파서(주로 Mistral, 상황에 따라 ODL·Gemini)를 실행해 3자 투표로 종결한다. 해당이 없으면 "추가 교차검증: 불필요"와 근거를 요약에 명시한다.
 
@@ -308,22 +325,23 @@ fused 산출로 작업이 끝나지 않는다. 매 파싱 작업의 끝에 아�
 2. **후처리·노이즈 정리 패턴** → `references/postprocess.md`.
 3. **함정·에러 처리** → `references/gotchas.md`.
 
-발견의 크기에 따라 새 규칙을 추가하거나 기존 항목에 사례를 덧붙인다. 사용자에게 영향이 있는 변경은 `CHANGELOG.md`에 버전 항목으로 기록한다.
+발견의 크기에 따라 새 규칙을 추가하거나 기존 항목에 사례를 덧붙인다. 사용자에게 영향이 있는 변경은 `CHANGELOG.md`에 날짜 항목으로 기록하고 SKILL.md `metadata.version`을 올린다(동작 변경 minor, 표현 patch).
 
 ## 환경 변수
 
 | 변수 | 필수 여부 | 비고 |
 |------|----------|------|
-| `LLAMAPARSE_API_KEY` | **medium 이상** (Primary) | LlamaParse v2 agentic. 10크레딧/p, 무료 월 10,000 |
-| `UPSTAGE_API_KEY` | medium 이상 (교차검증) | 완전성·메타데이터 보완 |
+| `LLAMAPARSE_API_KEY` | **medium 이상** (Primary) | LlamaParse v2 agentic. 10크레딧/p |
+| `UPSTAGE_API_KEY` | medium·스캔본 (교차검증), HWPX·Office 승격 | 완전성·메타데이터 보완 |
 | `GEMINI_API_KEY` | small 티어 / alt text 생성 | ≤15p Primary 또는 generate_alt_text.py |
-| `MISTRAL_API_KEY` | 조건부 (불일치·비한국어 시) | 3자 교차 검증용 |
-| `COREPIN_API_KEY` | 조건부 (HWP 네이티브·한국어 문서 비교) | Corepin 통합 문서 파서. 장당 2원, 무료 100p/월 |
-| `GOOGLE_VISION_API_KEY` | 조건부 (수기 손글씨 답안) | Vision 파서 인증(API 키). 또는 `GV_TOKEN`(=`gcloud auth print-access-token`)+`GV_PROJECT`. Vision API 활성화 필요. 무료 1,000p/월 |
-| Java Runtime | large 이상 (ODL 폴백) | OpenDataLoader용 |
+| `MISTRAL_API_KEY` | 조건부 (불일치·비한국어·스캔 large 이상) | 3자 교차 검증용 |
+| `COREPIN_API_KEY` | 조건부 (HWP 네이티브·한국어 문서 비교) | Corepin 통합 문서 파서 |
+| `GOOGLE_VISION_API_KEY` | 조건부 (수기 손글씨 답안) | Vision 파서 인증(API 키). 또는 `GV_TOKEN`(=`gcloud auth print-access-token`)+`GV_PROJECT`. Vision API 활성화 필요 |
+| `COHERE_API_KEY`·`OPENAI_API_KEY` | 후보 파서 비교 실행 시 | 등급 미평가 후보 |
+| Java Runtime | large 이상 (ODL) | OpenDataLoader용 |
 
-## 자주 참조하는 부록
+변수 목록의 정본은 `.env.example`, 준비 상태 점검은 `scripts/check_env.py`(Step 0).
 
-- **주의사항·에러 처리·동기화**: `references/gotchas.md`
-- **손글씨 충실 전사 (최고 방법·모델 비교·캐스케이드 프롬프트)**: `references/handwriting-cascade.md`
-- **변경 이력**: `CHANGELOG.md` (저장소 루트)
+## 변경 이력
+
+`CHANGELOG.md` (저장소 루트)

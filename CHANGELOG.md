@@ -1,5 +1,24 @@
 # 변경 이력
 
+## 2026-09-27 (1.5.0: 정합성 감사 반영 + 결함 수정)
+
+### 변경
+- **스캔본 티어 규칙을 진단 스크립트에 맞춤**: 스캔본은 진단이 쪽수 티어를 한 단계 올린다. 15쪽 이하 스캔 → LlamaParse v2 + Upstage, 16쪽 이상 → v2 + Upstage + Mistral. tier-rules의 「스캔 small = Gemini 단독」은 진단 경로로 도달할 수 없어 없앴다.
+- HWPX·HWP 상세(결정론 보강·하이브리드·Upstage 교차 조건·엔진 결함 처리·세부 절차)를 조건부 문서 `references/hwpx.md`로 모았다. SKILL.md에는 포인터 한 줄.
+- 손글씨 캐스케이드 repair 모델을 「Opus 기본, 비용 절감 시 Sonnet」으로 통일(옛 「Sonnet 권장·Opus 동급」 잔존 제거). Gemini 서술은 세대 중립(`latest` 별칭)으로, 정본은 SKILL.md small 티어 주의.
+- Step 3: macOS에는 `timeout`이 없음을 본문에 적고 대체(gtimeout 또는 빼고 수동 종료)를 둔다. `--lang`을 llamaparse·gvision에도 넘긴다.
+- Step 5: 로컬 결정론 파서 PASS 채택은 게이트 해당 없음, 스캔 양식 표 숫자는 Gemini·LlamaParse v2를 투표에서 빼고 Upstage·Mistral만. 규칙 우선순위 요약에 포맷 게이트를 넣고, 정확성 critical 3자 규칙은 포맷 게이트 PASS면 해당 없음.
+- tier-rules·postprocess에 목차. v2 이전 「Upstage Primary」 잔존 문장, 옛 Gemini 커버리지 조건, 정정 흔적을 고침. postprocess Step 7의 이미지 무조건 제거를 「장식만 제거, 본문 다이어그램 보존」으로, fusion-prompt 출력 형식이 `<br>`·`<mark>`·쪽 주석을 허용하도록.
+- 날짜·실측 경위는 같은 규칙 절의 근거 줄·gotchas로 옮겼다.
+
+### 수정
+- `generate_alt_text.py`: `--map`·`--output` 부모 폴더를 만든다(Step 4 명령의 `_work-docparse/`가 없어 유료 호출 뒤 매핑·출력을 모두 잃었다).
+- `apply_corrections.py`: `p.pdfN`·`p.Ⅰ-5` 등 라벨 쪽 주석도 경계로 본다(라벨 쪽 본문이 앞 숫자 쪽에 합쳐져 치환이 번졌다). 원본 쪽 `pdf15`가 5쪽으로 새던 파싱 수정.
+- `assess_document.py`: ≤20p 시각 렌더링 힌트를 쪽수로 건다(16~20쪽·15쪽 이하 스캔본에서 빠졌다).
+- `gvision_parse.py`: 모든 쪽이 빈 결과면 출력 없이 1(실행 계약).
+- `requirements.txt`: `hwpx-tomd>=0.2.2`.
+- 시험 15건 추가(`tests/`, 네트워크 없음).
+
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
 ## 2026-09-03 (파서 13종: OpenAI 편입)

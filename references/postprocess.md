@@ -18,7 +18,7 @@ v2 출력은 구조적으로 깔끔하지만(노이즈 적음, 헤딩 양호, �
 
   **`--skip-korean` 옵션 사용 금지(기본 권장)**: LlamaParse v2가 한국어 텍스트 OCR로 alt를 만들 때 너무 짧게(`법령 아이콘`, `접근로 사진`, `복도 사진`) 출력하는 경향. 시각장애인이 정보를 얻기에 무의미 → 한국어 alt가 있어도 Gemini로 재생성하여 시각적 특징(색·구성·어떤 법령인지·어떤 편의시설 특징인지)을 풍부하게 풀어내야 함. 2026-05 인사관리안내서 133p에서 LlamaParse 한국어 alt 113개 중 다수가 4~10자 이내였음.
 
-- **그 외 일반 문서**: `![alt](page_N_image_N_v2.jpg)` → alt가 본문 정보 담은 경우만 `(이미지: alt)` 보존, 단순 장식은 제거. `NO_CONTENT_HERE`도 일괄 제거.
+- **그 외 문서**: 본문 정보 다이어그램이 있으면 위와 같이 alt를 생성한 뒤(SKILL.md Step 4) 그 다이어그램만 `(이미지: alt)`로 보존하고, 단순 장식은 제거. `NO_CONTENT_HERE`도 일괄 제거.
 
 ### 2. `` ```description ... ``` `` 코드 블록 제거
 
@@ -162,7 +162,7 @@ LLM이 최종 fused 파일(`_fused_v3_<파서조합>.md`)을 최종 점검하며
 - **페이지 경계 고아 줄**: 문장이 잘린 채 남은 짧은 줄.
 - **중복 heading**: 페이지 경계에서 반복.
 - **환각 텍스트**: Mistral의 한국어 오인식, 중국어 텍스트 등.
-- **이미지 placeholder 및 figcaption 블록**: `![image](...)`, `<figcaption>...</figcaption>`.
+- **이미지 placeholder 잔재**: 깨진 링크·장식 이미지·빈 figcaption만 제거. 본문 정보 다이어그램은 `(이미지: alt)`로 보존(SKILL.md Step 4).
 - **Upstage OCR 단어 분절** (스캔 문서, Upstage 보조 사용 시): `Negat ive`→`Negative`, `Ur ine`→`Urine` 등. LlamaParse v2 Primary 사용 시 이 문제 없음(v2는 OCR 정확도 A).
 - **의학 약어 오인식** (Upstage): `C0L2A1`→`COL2A1`, `Rube IgG`→`Rubella IgG` 등. v2 Primary 시 정확.
 - **HTML 체크박스 아티팩트**: `<label><input type="checkbox">` → `□`.

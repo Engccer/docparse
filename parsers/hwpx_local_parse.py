@@ -97,7 +97,7 @@ def main():
         except HwpxEncryptedError as e:
             print("오류: 암호화된 HWPX입니다(파싱 불가).")
             print(str(e))
-            print("한컴에서 암호를 제거해 다시 저장한 뒤 변환하거나, OCR이 필요한 경우 Upstage를 사용하세요.")
+            print("한컴에서 암호를 제거해 다시 저장한 뒤 변환하세요.")
             return False
         except HwpxError as e:
             print(f"오류: HWPX 처리 실패: {e}")

@@ -50,7 +50,7 @@ pip install -r requirements.txt
 
 참고:
 
-- **Java 런타임**은 OpenDataLoader 파서(large / xlarge 폴백)에만 필요합니다. 그 외에는 선택 사항입니다.
+- **Java 런타임**은 OpenDataLoader 파서(large / xlarge)에만 필요합니다. `hwpx_enrich.py`·`apply_corrections.py`의 쪽 번호 정렬은 poppler(`pdftotext`·`pdfinfo`)를 씁니다(macOS `brew install poppler`). 그 외에는 선택 사항입니다.
 - 로컬 HWPX 파서는 `hwpx-tomd` 패키지에 의존합니다(`requirements.txt`로 설치). 이 패키지가 없는 기기에서는 hwpx_local이 설치 안내를 출력하며, Upstage로 폴백할 수 있습니다.
 - 구형 바이너리 **HWP** 파일은 HWPX로 변환한 뒤 투입합니다. 변환 도구는 별도 공개 저장소 [hwpx-automation](https://github.com/Engccer/hwpx-automation)의 `convert/`(JDK 21 기반 hwp2hwpx)를 사용합니다.
 - 모든 파서는 독립적입니다. 의존성이나 API 키가 없으면 그 파서 하나만 설치/설정 안내를 출력하고 나머지는 계속 동작합니다.
@@ -107,7 +107,7 @@ python parsers/docx_local_parse.py input.docx     # 로컬, 무료, DOCX 전용
 python parsers/opendataloader_parse.py input.pdf  # 로컬, 무료, Java 필요
 ```
 
-경로 없이 실행하면 현재 디렉터리에서 지원 파일을 자동 탐지합니다. 출력은 입력 옆에 `<name>_<service>.md` 형식으로 기록됩니다(예: `input_upstage.md`). 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이며, 오류·빈 결과·검증 실패·부분 결과는 출력 없이 1로 끝나고 실행 시작 시 같은 이름의 이전 출력을 지웁니다. 보조 스크립트는 `scripts/` 아래에 있습니다(`assess_document.py`, `compare_outputs.py`, `normalize_odl.py` 등).
+경로 없이 실행하면 현재 디렉터리에서 지원 파일을 자동 탐지합니다(`cohere`·`openai`·`gvision`은 경로 필수). 출력은 입력 옆에 `<name>_<service>.md` 형식으로 기록됩니다(예: `input_upstage.md`). 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이며, 오류·빈 결과·검증 실패·부분 결과는 출력 없이 1로 끝나고 실행 시작 시 같은 이름의 이전 출력을 지웁니다. 보조 스크립트는 `scripts/` 아래에 있습니다(`assess_document.py`, `compare_outputs.py`, `normalize_odl.py` 등).
 
 ## 이식성 (코딩 에이전트 호환)
 

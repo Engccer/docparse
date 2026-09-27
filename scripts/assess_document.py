@@ -52,7 +52,7 @@ PUA_PER_10K_THRESHOLD = 100.0
 LATIN_RATIO_THRESHOLD = 0.5
 SAMPLE_MAX = 12
 
-_PUA = re.compile("[-]")
+_PUA = re.compile("[\ue000-\uf8ff]")  # 보이지 않는 PUA 글자를 문자 그대로 쓰지 않는다(복사하면 깨진다)
 _HANGUL = re.compile("[가-힣]")
 _LATIN = re.compile("[A-Za-zÀ-ÿ]")
 

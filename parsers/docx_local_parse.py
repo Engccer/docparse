@@ -1,4 +1,4 @@
-"""DOCX 로컬 결정론 파서 (docparse Tier 0): python-docx로 외부 API 없이 추출.
+"""DOCX 로컬 결정론 파서 (docparse docx 티어): python-docx로 외부 API 없이 추출.
 
 다른 *_parse.py와 동일한 인터페이스:
   python docx_local_parse.py "<파일.docx>"        → <파일>_docxlocal.md
