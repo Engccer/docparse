@@ -33,7 +33,7 @@ import subprocess
 import sys
 
 COLS = ["문서", "원본 쪽", "원문", "수정문", "유형", "처리", "근거", "비고"]
-PAGE_MARK = re.compile(r"<!--\s*p\.(\S+)[^>]*-->")
+PAGE_MARK = re.compile(r"<!--\s*p\.([^\s>]+)[^>]*-->")
 
 
 def split_by_page(text: str):
@@ -66,12 +66,9 @@ def replace_in_pages(segments, pages_wanted, src, dst):
         out = []
         for k, (page, seg) in enumerate(segments):
             nxt = next((pg for pg, _ in segments[k + 1:] if pg is not None), None)
-            if page is not None and k + 1 < len(segments) and segments[k + 1][0] is None:
-                covered = page in pages_wanted  # 바로 뒤가 라벨 쪽이면 이 구간은 자기 쪽만 덮는다
-            else:
-                covered = page is not None and any(
-                    (page <= w and (nxt is None or (w <= nxt if inclusive else w < nxt))) for w in pages_wanted
-                )
+            covered = page is not None and any(
+                (page <= w and (nxt is None or (w <= nxt if inclusive else w < nxt))) for w in pages_wanted
+            )
             if covered and src in seg:
                 count += seg.count(src)
                 seg = seg.replace(src, dst)
@@ -84,6 +81,17 @@ def replace_in_pages(segments, pages_wanted, src, dst):
     if count == 0:
         out, count = run(True)
     return out, count
+
+
+def printed_pages(page_field: str) -> set[int]:
+    """「원본 쪽」 칸에서 범위 지정에 쓸 인쇄 쪽 번호.
+
+    `pdf7`은 인쇄 쪽 번호가 없는 쪽의 PDF 순번이라 <!-- p.N --> 라벨과 다른 좌표계다.
+    인쇄 쪽 번호(순수 숫자)만 범위 지정에 쓰고, pdf 접두 값은 전역 경로로 보낸다.
+    """
+    return {int(n) for n in re.findall(r"(?<![A-Za-z\d])\d+", page_field)} - {
+        int(n) for n in re.findall(r"pdf(\d+)", page_field)
+    }
 
 
 def load_pages(pdf: str):
@@ -135,12 +143,7 @@ def main():
         if cnt == 0:
             errors.append(f"원문 없음: {src!r}")
             continue
-        # `pdf7`은 인쇄 쪽 번호가 없는 쪽의 PDF 순번이라 <!-- p.N --> 라벨과 다른 좌표계다.
-        # 인쇄 쪽 번호(순수 숫자)만 범위 지정에 쓰고, pdf 접두 값은 전역 경로로 보낸다.
-        page_field = r["원본 쪽"] or ""
-        wanted = {int(n) for n in re.findall(r"(?<![A-Za-z])\d+", page_field)} - {
-            int(n) for n in re.findall(r"pdf(\d+)", page_field)
-        }
+        wanted = printed_pages(r["원본 쪽"] or "")
         if segments is not None and wanted:
             segments, n_scoped = replace_in_pages(segments, wanted, src, dst)
             text = "".join(seg for _, seg in segments)

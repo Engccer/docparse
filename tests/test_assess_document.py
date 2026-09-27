@@ -20,3 +20,19 @@ def test_read_hint_for_12_page_scan_bumped_to_medium():
 
 def test_no_read_hint_over_20_pages():
     assert READ not in D.rule_hints("pdf", "medium", True, False, SIG, "ko", pages=21)
+
+
+def test_main_passes_page_count_to_hints(tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+    pymupdf = __import__("pymupdf")
+    for n, want in ((18, True), (21, False)):
+        pdf = tmp_path / f"d{n}.pdf"
+        doc = pymupdf.open()
+        for i in range(n):
+            doc.new_page().insert_text((72, 72), f"page {i + 1} 본문 텍스트 레이어")
+        doc.save(pdf)
+        monkeypatch.setattr(sys, "argv", ["assess_document.py", str(pdf)])
+        assert D.main() == 0
+        out = json.loads(capsys.readouterr().out)
+        assert (READ in out["rule_hints"]) is want, (n, out["rule_hints"])

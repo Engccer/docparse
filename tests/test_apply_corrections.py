@@ -52,9 +52,24 @@ def test_old_numeric_forms_still_numeric():
     assert A.split_by_page("<!-- p.15pdf -->\nX\n")[1][0] is None
 
 
-def test_numeric_segment_before_label_covers_only_itself():
-    # 2쪽 뒤에 라벨 쪽이 이어지면 원본 쪽 5가 2쪽 구간에 걸리지 않는다(쪽 번호를 모르는 라벨 쪽 몫).
-    text = "<!-- p.2 (pdf 2) -->\nX\n<!-- p.Ⅰ-5 (pdf 5) -->\nb\n<!-- p.25 (pdf 25) -->\nc\n"
-    out, n = run(text, {5})
-    assert n == 0
-    assert out == text
+
+def test_range_before_label_page_is_unchanged():
+    # 라벨 주석은 경계일 뿐, 앞 숫자 구간이 덮는 쪽 범위(다음 숫자 주석 직전까지)는 종전 그대로다.
+    text = "<!-- p.3 (pdf 5) -->\n## 1. 절\n2025년 오인식\n<!-- p.pdf15 (pdf 15) -->\n# Ⅱ. 장\n2025년 정상\n"
+    out, n = run(text, {7}, "2025년 오인식", "2024년 오인식")
+    assert n == 1
+
+
+def test_inline_marks_without_space_stay_separate():
+    segs = A.split_by_page("<!-- p.5-->X<!-- p.6 -->Y")
+    assert [pg for pg, _ in segs] == [None, 5, 6]
+
+
+
+def test_pdf_prefixed_original_page_is_not_a_printed_page():
+    # pdf15의 뒷자리 5가 인쇄 쪽 5로 새면 엉뚱한 쪽을 조용히 치환한다.
+    assert A.printed_pages("pdf15") == set()
+    assert A.printed_pages("pdf123") == set()
+    assert A.printed_pages("12, pdf15") == {12}
+    assert A.printed_pages("pdf7") == set()
+    assert A.printed_pages("5, 6 외") == {5, 6}
