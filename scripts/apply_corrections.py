@@ -9,7 +9,7 @@ CSV 열(UTF-8 BOM, 첫 줄 머리글):
   문서, 원본 쪽, 원문, 수정문, 유형, 처리, 근거, 비고
   - 유형: 오탈자 / 개인정보 / 표기 정규화 / 원본 결함 / 법령 갱신 / 확인 필요
   - 처리: 적용 → 원문을 수정문으로 치환 / 기록만 → 치환하지 않고 목록에만 남김
-  - 원본 쪽: 비워 두면 --pdf-pages(hwpx_enrich.py가 만든 쪽 텍스트 JSON 또는 PDF 경로)로 채운다
+  - 원본 쪽: 비워 두면 --pdf(원본 PDF)로 채운다
 
 사용:
   python apply_corrections.py --csv "정본 수정 목록.csv" --doc "2023 최종보고서" --in enriched.md --out final.md [--pdf 원본.pdf] [--write-pages]
@@ -33,18 +33,24 @@ import subprocess
 import sys
 
 COLS = ["문서", "원본 쪽", "원문", "수정문", "유형", "처리", "근거", "비고"]
-PAGE_MARK = re.compile(r"<!--\s*p\.(\d+)\b[^>]*-->")
+PAGE_MARK = re.compile(r"<!--\s*p\.(\S+)[^>]*-->")
 
 
 def split_by_page(text: str):
-    """쪽 주석 기준 구간 목록 [(쪽 번호 또는 None, 구간 문자열), ...]. 주석이 없으면 None."""
+    """쪽 주석 기준 구간 목록 [(쪽 번호 또는 None, 구간 문자열), ...]. 주석이 없으면 None.
+
+    hwpx_enrich가 넣는 주석은 모두 경계로 본다. 라벨이 숫자가 아니면(`p.pdf15`·`p.Ⅰ-5`·`p.목차 5`)
+    쪽 번호는 None이라 숫자 「원본 쪽」의 범위 지정에 걸리지 않는다. 경계로 보지 않으면 그 쪽 본문이
+    앞 숫자 쪽 구간에 합쳐져 치환이 번진다.
+    """
     marks = list(PAGE_MARK.finditer(text))
     if not marks:
         return None
     segments = [(None, text[:marks[0].start()])]
     for k, m in enumerate(marks):
         end = marks[k + 1].start() if k + 1 < len(marks) else len(text)
-        segments.append((int(m.group(1)), text[m.start():end]))
+        num = re.match(r"(\d+)\b", m.group(1))  # 종전 판정(앞자리 숫자 + 단어 경계)을 그대로 쓴다
+        segments.append((int(num.group(1)) if num else None, text[m.start():end]))
     return segments
 
 
@@ -60,9 +66,12 @@ def replace_in_pages(segments, pages_wanted, src, dst):
         out = []
         for k, (page, seg) in enumerate(segments):
             nxt = next((pg for pg, _ in segments[k + 1:] if pg is not None), None)
-            covered = page is not None and any(
-                (page <= w and (nxt is None or (w <= nxt if inclusive else w < nxt))) for w in pages_wanted
-            )
+            if page is not None and k + 1 < len(segments) and segments[k + 1][0] is None:
+                covered = page in pages_wanted  # 바로 뒤가 라벨 쪽이면 이 구간은 자기 쪽만 덮는다
+            else:
+                covered = page is not None and any(
+                    (page <= w and (nxt is None or (w <= nxt if inclusive else w < nxt))) for w in pages_wanted
+                )
             if covered and src in seg:
                 count += seg.count(src)
                 seg = seg.replace(src, dst)

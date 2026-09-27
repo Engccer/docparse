@@ -161,6 +161,7 @@ def main():
              f"\n> 단어 confidence(0~1) 기준 저신뢰(<{LOW}) 단어를 페이지마다 별도 표기. "
              f"clean text는 LlamaParse v2와의 diff용, 저신뢰 목록은 시각 판독 표적용.\n"]
     total_low = 0
+    total_chars = 0
     failed = []  # (page, reason)
     for n, img in pages:
         try:
@@ -174,6 +175,7 @@ def main():
                       ensure_ascii=False)
         fta = resp.get("fullTextAnnotation", {})
         text = fta.get("text", "").strip()
+        total_chars += len(text)
         low = low_conf_words(fta)
         total_low += len(low)
         parts.append(f"\n## p.{n}\n\n{text}\n")
@@ -185,6 +187,10 @@ def main():
         for n, reason in failed:
             print(f"  - p.{n}: {reason[:120]}")
         print("→ 한도(429)면 잠시 후 재실행, 인증(401/403)이면 GV_TOKEN 갱신·Vision API 활성화 확인.")
+        return 1
+
+    if total_chars == 0:
+        print(f"오류: {len(pages)}페이지 모두 인식된 텍스트가 없습니다. 출력 파일을 만들지 않았습니다.")
         return 1
 
     with open(out_path, "w", encoding="utf-8") as f:

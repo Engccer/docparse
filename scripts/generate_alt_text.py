@@ -260,6 +260,8 @@ def main():
         )
         alt_map, failed_pages = generate_map(args.pdf, by_page, args.model, args.dpi, prompt_template)
         if args.map:
+            # Step 4의 `_work-docparse/`는 Step 8에서야 생기므로, 유료 호출 뒤 저장 실패로 결과를 잃지 않게 만든다.
+            args.map.parent.mkdir(parents=True, exist_ok=True)
             args.map.write_text(json.dumps(alt_map, ensure_ascii=False, indent=2),
                                 encoding="utf-8")
             print(f"매핑 JSON 저장: {args.map}", flush=True)
@@ -268,6 +270,7 @@ def main():
     print(f"치환 완료: {replaced}개 매핑 적용, {unmapped}개는 placeholder 원문 유지", flush=True)
 
     if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(new_text, encoding="utf-8")
         print(f"출력: {args.output}", flush=True)
     else:

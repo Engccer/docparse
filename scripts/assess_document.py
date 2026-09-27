@@ -263,7 +263,7 @@ def recommend_parsers(fmt, tier, has_text_layer, table_hint, lang="ko"):
     return parsers
 
 
-def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang):
+def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None):
     """진단만으로 걸리는 tier-rules 절 이름. 걸리지 않은 절은 적지 않는다(해당 없음 ≠ 미판정).
 
     손글씨·합본·인구통계 교차표·병합셀처럼 진단으로 못 잡는 특성은 SKILL.md 보정 규칙
@@ -283,7 +283,7 @@ def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang):
             hints.append("영어 비율 ≥50% (Mistral Primary 고려 조건)")
         if has_text_layer and tier in ("large", "xlarge"):
             hints.append("ODL Primary 채택 전 본문 숫자 검증")
-        if tier == "small":
+        if pages is not None and pages <= 20:
             hints.append("PDF Read 도구의 시각 렌더링 = ground truth (≤20p)")
     if lang != "ko":
         hints.append("비한국어 문서 조건 정밀화")
@@ -364,7 +364,7 @@ def main():
     result["lang"] = lang
     result["rule_hints"] = rule_hints(
         fmt, result["tier"], result.get("has_text_layer", True),
-        result.get("table_hint", False), result["signals"], lang,
+        result.get("table_hint", False), result["signals"], lang, pages=result.get("pages"),
     )
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
