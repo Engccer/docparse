@@ -59,7 +59,7 @@
 
 채점 항목:
 1. `assess_document.py` → docx 티어 → `docx_local_parse.py` 먼저(로컬·무료, 유료 API 호출 없음).
-2. PASS면 그대로 채택: `가정통신문_10월_fused_v3_docxlocal.md`, LLM 교차 검증(Step 5~7 LLM 부분) 생략 가능.
+2. PASS면 그대로 채택: `가정통신문_10월_fused_v3_docxlocal.md`, Step 5·6(무결성 게이트·교차 검증) 생략, Step 7 최종 점검은 한다.
 3. Step 0.5(편집 원본 탐색)는 PDF가 아니므로 해당 없음.
 4. "스레기통"을 임의로 고치지 않는다(교정은 사용자 요청 시 `apply_corrections.py` CSV).
 5. Step 8 요약: 적용 절 이름(XLSX·DOCX), Step 9 두 결과(추가 교차검증 불필요+근거, 규칙 반영 없음).

@@ -42,7 +42,7 @@
 ## Vision 캐스케이드 워크플로우
 
 1. **Vision OCR**: `python <스킬루트>/parsers/gvision_parse.py <파일.pdf> --raw < /dev/null` (PDF는 파서가 쪽마다 렌더해 호출). 리터럴 텍스트 + 단어별 confidence + geometry JSON(`--raw`).
-2. **영어 본문 드래프트 추출**: `python scripts/extract_vision_drafts.py <_gvision.md>`가 Vision `_gvision.md`에서 양식 헤더(`## p.`)와 체크리스트(`자기 점검표`/`저신뢰:`) 사이의, **라틴 글자 포함·한글 미포함 라인**만 모아 페이지별 드래프트로(한글 양식 자동 제거).
+2. **영어 본문 드래프트 추출**: `python <스킬루트>/scripts/extract_vision_drafts.py <_gvision.md>`가 Vision `_gvision.md`에서 양식 헤더(`## p.`)와 체크리스트(`자기 점검표`/`저신뢰:`) 사이의, **라틴 글자 포함·한글 미포함 라인**만 모아 페이지별 드래프트로(한글 양식 자동 제거).
 3. **Claude 비전 repair**: 각 페이지의 **이미지 + Vision 드래프트**를 Claude(Opus 기본. 비용 절감 시 Sonnet 허용, 품질 손실 ~0.3%p)에 주고 아래 프롬프트로 교정. 합본은 페이지 대량 Read 회피 위해 서브에이전트에 위임(`gotchas.md`). 합본 서브에이전트 결과는 알림이 잘릴 수 있으니 **Write 도구로 파일 저장**시켜 회수.
 4. **충실 조립**: 결과를 fused로. 모호 글자 채택 근거는 "판독 노트" 부록.
 

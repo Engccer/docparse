@@ -9,7 +9,7 @@
 - HWPX·HWP 상세(결정론 보강·하이브리드·Upstage 교차 조건·엔진 결함 처리·세부 절차)를 조건부 문서 `references/hwpx.md`로 모았다. SKILL.md에는 포인터 한 줄.
 - 손글씨 캐스케이드 repair 모델을 「Opus 기본, 비용 절감 시 Sonnet」으로 통일(옛 「Sonnet 권장·Opus 동급」 잔존 제거). Gemini 서술은 세대 중립(`latest` 별칭)으로, 정본은 SKILL.md small 티어 주의.
 - Step 3: macOS에는 `timeout`이 없음을 본문에 적고 대체(gtimeout 또는 빼고 수동 종료)를 둔다. `--lang`을 llamaparse·gvision에도 넘긴다.
-- Step 5: 로컬 결정론 파서 PASS 채택은 게이트 해당 없음, 스캔 수기 양식 표 숫자는 Gemini·LlamaParse v2를 투표에서 빼고 Upstage·Mistral만. 규칙 우선순위 요약에 포맷 게이트를 넣고, 정확성 critical 3자 규칙은 포맷 게이트 PASS면 해당 없음.
+- Step 5: 로컬 결정론 파서 PASS 채택은 Step 5·6을 생략하고 Step 7 최종 점검은 한다(종전 「Step 5~7 생략 가능」의 범위를 명확히), 스캔 수기 양식 표 숫자는 Gemini·LlamaParse v2를 투표에서 빼고 Upstage·Mistral만. 규칙 우선순위 요약에 포맷 게이트를 넣고, 정확성 critical 3자 규칙은 포맷 게이트 PASS면 해당 없음.
 - tier-rules·postprocess·hwpx에 목차. v2 이전 「Upstage Primary」 잔존 문장, 옛 Gemini 커버리지 조건, 정정 흔적을 고침. postprocess Step 7의 이미지 무조건 제거를 「장식만 제거, 본문 다이어그램 보존」으로, fusion-prompt 출력 형식이 `<br>`·`<mark>`·쪽 주석을 허용하도록.
 - 날짜·실측 경위는 같은 규칙 절의 근거 줄·gotchas로 옮겼다.
 
