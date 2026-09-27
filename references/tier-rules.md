@@ -176,6 +176,8 @@ python "<스킬루트>/parsers/llamaparse_parse.py" --credits
 4. **셀 위치 대조(Step 5.3)는 이 구간의 모든 표에 필수**: 3파서 다수결(Gemini 제외), 불일치가 남으면 해당 쪽을 시각 판독해 확정한다(시각 판독 표적 목록을 자동 생성). 괘선 격자가 있으면 pdfplumber 그리드·좌표 덤프를 대조 자료로 보존한다(병합 경고로 출력이 거부돼도 텍스트 자체는 신뢰 가능).
 5. **쪽 경계 문장**: 음절 단위로 잘린 조각(「생활통지표」의 「생」이 잘려 「활동지표」로 오독)은 잇기 전후 diff에서 잡히므로 연속 표 구간은 본문 조각도 함께 대조한다.
 
+Step 0.5(편집 원본 탐색)의 사례(2026-08-28): 554쪽 연구보고서를 PDF로 LLM 3자 파싱해 병합셀 1:1 날조·표 열 소실이 검수에서 30건 넘게 잡혔는데, HWP 원본이 발주처 공유 폴더에 처음부터 있었다.
+
 ## 학술/연구 보고서 (정형 텍스트 + 표 풍부)
 
 *근거: **미표기**(사례 서술만) — v2 헤딩 위계 불안정 예시 1건. 장부 판정 없음*
@@ -200,6 +202,8 @@ python "<스킬루트>/parsers/llamaparse_parse.py" --credits
   - **수기 양식 표 숫자의 Primary·교차검증에서는 Upstage + Mistral만 사용**.
 - Primary 선정 후 반드시 데이터 무결성 게이트(Step 5) 적용.
 - 산술 검증 + 셀 단위 교차 대조 필수.
+
+Step 5.3(셀 위치 비교)의 실측 사례: 합계 7이 동일하지만 `법정한부모=2,그외저소득=1` → `그외저소득=2,다문화=1`로 열 이동 (2026-04).
 
 ## 스캔 문서 + 인쇄체 표 (의무기록 검사결과 등)
 
@@ -383,15 +387,7 @@ Claude Code의 `Read` 도구는 ≤20p PDF를 시각 이미지로 렌더링해 �
 
 ### HWP/HWPX 파싱 세부 절차
 
-*근거: **단계마다 다르다.** 1~2단계(hwpx-tomd 변환) n=33(실문서 33종 글자 멀티셋 손실 0·마커 손실 0, 2026-06-06) / 4~5단계(`hwpx_enrich` 보강·kordoc 대조) **n=1**(554쪽 보고서, 2026-08-28) / 6단계는 변환 실패 대응이라 문서 수 개념 없음 / 3·7단계는 라우팅. **절 전체를 n=33으로 읽지 말 것** — 가장 두꺼운 근거는 변환 정확도에만 해당한다*
-
-1. HWP → `hwpx-automation/convert/hwp2hwpx.bat <입력.hwp>`(Windows) 또는 `hwp2hwpx.sh`(macOS/Linux)로 HWPX 변환 (Java, 서식 보존).
-2. HWPX → `parsers/hwpx_local_parse.py <파일.hwpx>`로 마크다운 변환(출력 `_hwpxlocal.md`). 긴 지문이 셀 안에 있으면 `--cell-br`.
-3. 이미지 경고·recall/마커 경고가 뜨거나 시각적 배치 재현이 중요하면 Upstage 추가 실행하여 비교.
-4. 보고서류는 변환 직후 `scripts/hwpx_enrich.py`로 제목(개요 스타일)·취소선·글자색·인쇄 PDF 쪽 번호를 보강한다(SKILL.md HWPX 티어 절). 취소선·글자색의 정본은 **hwp2hwpx HWPX의 `charPr`**이며 pyhwp XML·한컴 COM 변환본의 strikeout은 오판이 확인돼 쓰지 않는다(2026-08-28).
-5. kordoc(`npx --yes --package kordoc --package pdfjs-dist kordoc <hwp> --format json`)은 HWP를 직접 읽어 표별 rowSpan/colSpan 명세·장 제목·글꼴 크기를 JSON으로 주므로 **보조 메타·대조용**으로 유용하다(2026-08-28 554쪽 보고서에서 본문 글자 hwpx_local과 동일, 누락 1자). 단 쪽 번호는 자체 추정(495쪽 vs 인쇄 554쪽)이라 인쇄본 쪽수로 쓰지 않는다. 2026-03의 표 중심 문서 파싱 실패 사례가 있어 Primary로는 여전히 비권장.
-6. hwp2hwpx가 예외로 죽는 HWP(`extendControl IndexOutOfBounds`=컨트롤 문자 수 불일치, `EmptyStackException`=필드 짝 불일치)는 hwpx-automation의 패치 JAR로 재시도하고, 그래도 안 되면 Windows 한컴 COM(`hwpx_com.py --from-hwp`, SSH에서는 `schtasks /IT` 경유)으로 변환한다.
-7. HWPX 편집(`--set-cell`/`--find` 등)은 docparse가 아니라 `hwpx-automation` 스킬의 `hwpx_edit.py`를 쓴다(docparse는 읽기 전용).
+→ `references/hwpx.md`의 같은 제목 절.
 
 ### 포맷별 호환성 매트릭스
 
