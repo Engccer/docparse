@@ -39,3 +39,34 @@ def test_main_passes_page_count_to_hints(tmp_path, monkeypatch, capsys):
         assert D.main() == 0
         out = json.loads(capsys.readouterr().out)
         assert (READ in out["rule_hints"]) is want, (n, out["rule_hints"])
+
+
+def test_odt_is_supported_and_routed_to_openai():
+    assert D.SUPPORTED_FORMATS[".odt"] == "odt"
+    assert D.recommend_parsers("odt", "odt", True, False) == ["openai"]
+
+
+def test_main_assigns_odt_tier(tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+    odt = tmp_path / "공문.odt"
+    odt.write_bytes(b"PK")
+    monkeypatch.setattr(sys, "argv", ["assess_document.py", str(odt)])
+    assert D.main() == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["format"] == "odt"
+    assert out["tier"] == "odt"
+    assert out["recommended_parsers"] == ["openai"]
+    assert any("content.xml" in h for h in out["rule_hints"])
+
+
+def test_openai_parser_accepts_odt():
+    P = load("parsers/openai_parse.py", "openai_parse")
+    assert P.OFFICE_MIME[".odt"] == "application/vnd.oasis.opendocument.text"
+    assert ".odt" in P.SUPPORTED_EXT
+
+
+def test_odt_hint_names_pandoc_loss_and_metadata_title():
+    hints = D.rule_hints("odt", "odt", True, False, SIG, "ko")
+    assert any("Pandoc" in h and "content.xml" in h for h in hints)
+    assert any("dc:title" in h for h in hints)

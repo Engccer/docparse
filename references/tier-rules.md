@@ -312,7 +312,7 @@ PyMuPDF로 헤더·쟁점 구간을 크롭(폭 1500px 이하)해 서브에이전
 
 ## 시험지·고사 원안·평가지 (객관식 옵션 포함)
 
-*근거: n=1 — 5p 영어 시험지(2026-04)*
+*근거: n=2 — 5p 영어 시험지(2026-04), 5p 영어 시험지 HWPX 원본 + 동일 PDF(2026-09)*
 
 **페이지 티어 무관, 최소 3종 파서 교차검증 필수**. 옵션 텍스트 한 글자가 정답을 좌우하므로 small 티어(≤15p)에서도 Gemini 단독 신뢰 불가.
 
@@ -321,6 +321,9 @@ PyMuPDF로 헤더·쟁점 구간을 크롭(폭 1500px 이하)해 서브에이전
 - **Upstage 약점**: I → | OCR 노이즈(영어 대문자 I), ⓒ → Ⓒ 변환, HTML 표 마크업 잔존.
 - **ODL 약점**: 마크다운 형식이 표/`<br>` 혼재로 가독성 낮음 → LLM 후처리 필수.
 - **정답표 동봉 시**: 정답 인덱스(①~⑤)와 본문 옵션 매칭 검증을 Step 5에 추가 (배점 합계, 문항 수도 함께 검증).
+- **밑줄·빈칸은 파서 전부에서 소실되고 교차검증으로 잡히지 않는다**: 영작 완성 문항의 빈칸과 어법 문항의 (A)~(E)·㉠~㉤ 밑줄 범위가 hwpx_local·ODL·PyMuPDF 텍스트 레이어 셋 모두에서 사라져, 빈칸 앞뒤 문장이 그냥 이어 붙는다(누락 경고 없음). 세 파서가 같은 것을 잃으므로 토큰 대조가 완전히 일치해도 Step 5·6은 통과한다. 원인은 포맷마다 다르다: HWPX는 XML에 정보가 있고(밑줄은 `hh:charPr`의 `<hh:underline type="BOTTOM"/>`, 빈칸은 그 charPr이 걸린 공백 런) 엔진 hwpx-tomd가 출력에 매핑하지 않는 것(`Engccer/hwpx-tomd#3`, `references/hwpx.md`「hwpx_local 변환 결함은 공유 엔진 소관」), PDF는 밑줄이 별도 드로잉이라 텍스트 레이어에 없다. 밑줄 범위는 "다음 마커 직전까지"라는 보장이 없어 후처리 휴리스틱으로 못 되살린다. **복원 경로는 렌더 이미지 시각 판독뿐**이므로 대조가 통과해도 전 쪽 렌더 확인을 건너뛰지 않는다(아래 「PDF Read 도구의 시각 렌더링 = ground truth (≤20p)」).
+- **지문 머리의 만화·삽화가 문항 근거인 경우**: 만화 컷의 대사가 내용 일치 문항의 근거이거나 삽화 속 소지품 유무가 정답 판별 핵심인 문항이 있다. hwpx_local은 이미지 경고만 띄우고 ODL·텍스트 레이어도 이미지 글자를 못 읽으므로, 시각 판독으로 **대사 전문과 정답 판별에 쓰이는 시각 단서**를 본문에 옮긴다(Step 4 "이미지 placeholder 단순 제거 금지"가 시험지에서 가장 강하게 적용되는 자리).
+- **키 없는 환경의 대안 조합**(HWPX 원본과 동일 내용 PDF가 둘 다 있을 때): hwpx_local(HWPX) + ODL + PyMuPDF `get_text()`(PDF) 3자 토큰 멀티셋 대조 + 전 쪽 렌더 판독으로 권장 조합을 대신한다(n=1 실측: 영어 토큰 불일치 0건, 차이는 ODL의 `<br>`·엔티티·`Page` 마커와 발문 띄어쓰기 1건).
 
 ### ⚠️ 수식이 있는 시험지는 LlamaParse v2가 유일한 Primary
 
@@ -393,6 +396,7 @@ Claude Code의 `Read` 도구는 ≤20p PDF를 시각 이미지로 렌더링해 �
 | HWPX | `hwpx_local_parse.py` (1순위) | 무료, 로컬, hwpx-tomd 엔진. 표 구조 정확·자가검증 내장. recall 미달·마커 누락 경고면 출력 미작성(Upstage 승격), 이미지 내 텍스트·레이아웃 중요 시 Upstage 교차/대안 |
 | HWP | HWPX 변환 후 `hwpx_local_parse.py` | `hwpx-automation/convert/hwp2hwpx.bat`(Windows)·`.sh`(macOS/Linux)로 변환 → HWPX와 동일 처리 |
 | DOCX | `docx_local_parse.py` (1순위) | 무료, 로컬. 전수 recall 대조 PASS면 채택, 텍스트박스·각주·중첩 표는 거부하고 Upstage·LlamaParse v2로 승격 |
+| ODT | `openai_parse.py` (1순위) | 로컬 파서 없음. Responses API가 ODT를 직접 받아 텍스트를 보존한다(공문 1건 실측: `content.xml` 말단 문단 68개 전부 존재). **Pandoc 단독 변환은 표·상단 기관명·하단 시행·접수·연락처를 조용히 빠뜨리므로 종료 코드 0을 완료로 보지 않고** 결과를 `content.xml` 문단과 전수 대조한다. 첫 줄에 `meta.xml`의 `dc:title`·북마크 안내문("본문을 입력하십시오")이 섞여 나오면 원본 역할을 확인하고 뺀다(문자열 무조건 삭제 금지). 빈 셀 `-` 채움·결재표 재배치가 있어 문자 보존 검사가 셀 구조 보존을 보장하지 않는다. 내장 이미지는 추출되지 않는다. 원문의 비표준 표기(`15;00`)는 OCR 오류로 교정하지 않는다. ODL은 PDF 전용이라 거부, Mistral은 OpenDocument 지원을 발표했으나 호출 제한(429)으로 미검증 |
 | XLSX | `xlsx_local_parse.py` (1순위) | 무료, 로컬. 원시 XML 값 멀티셋 대조 PASS면 채택, 불일치·차트 텍스트 필요 시 Upstage·LlamaParse v2로 승격 |
 | PPTX | Upstage + LlamaParse v2 | Mistral 선택 추가 가능. 로컬 파서 없음(미검증 포맷) |
 | JPG/PNG | Upstage + Gemini | OCR + 텍스트 품질 |
@@ -412,6 +416,7 @@ Claude Code의 `Read` 도구는 ≤20p PDF를 시각 이미지로 렌더링해 �
 | HWPX | **hwpx_local (1순위)** | O | - | - | - | - |
 | HWP | hwpx_local (변환 후) | O | - | - | - | - |
 | DOCX | **docx_local (1순위)** | O | - | O | O | - |
+| ODT | - | 미확인 | - | 미확인(공식 목록엔 ODS만) | 미확인(발표는 지원, 실호출 429) | - (PDF 전용) |
 | PPTX | - | O | - | O | O | - |
 | XLSX | **xlsx_local (1순위)** | O | - | O | - | - |
 

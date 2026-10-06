@@ -44,6 +44,7 @@ SUPPORTED_FORMATS = {
     ".jpg": "image", ".jpeg": "image", ".png": "image",
     ".hwp": "hwp", ".hwpx": "hwpx",
     ".docx": "docx", ".pptx": "pptx", ".xlsx": "xlsx",
+    ".odt": "odt",
 }
 
 TEXT_PAGE_MIN_CHARS = 50
@@ -252,6 +253,11 @@ def recommend_parsers(fmt, tier, has_text_layer, table_hint, lang="ko"):
         parsers = ["docx_local", "upstage", "llamaparse"]
     elif fmt == "pptx":
         parsers = ["upstage", "llamaparse"]
+    elif fmt == "odt":
+        # 로컬 파서 없음. OpenAI Responses API가 ODT를 직접 받아 텍스트를 보존한다
+        # (공문 1건 실측: content.xml 말단 문단 68개 전부 출력에 존재). Pandoc 단독
+        # 변환은 표·상하단 정보를 조용히 빠뜨리고, ODL은 PDF 전용이라 받지 않는다.
+        parsers = ["openai"]
     elif fmt == "xlsx":
         # 로컬·무료 파서 우선. 원시 XML 교차 검증 불일치·차트 텍스트 중요 시 승격.
         parsers = ["xlsx_local", "upstage", "llamaparse"]
@@ -285,6 +291,9 @@ def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None)
             hints.append("ODL Primary 채택 전 본문 숫자 검증")
         if pages is not None and pages <= 20:
             hints.append("PDF Read 도구의 시각 렌더링 = ground truth (≤20p)")
+    if fmt == "odt":
+        hints.append("ODT: Pandoc 단독 변환은 표·상하단 정보를 조용히 빠뜨린다(content.xml 문단 전수 대조 필수)")
+        hints.append("ODT: meta.xml dc:title·북마크 안내문이 본문 첫 줄에 섞이는지 검사")
     if lang != "ko":
         hints.append("비한국어 문서 조건 정밀화")
     return hints
@@ -348,6 +357,8 @@ def main():
             result["tier"] = "xlsx"
         elif fmt == "docx":
             result["tier"] = "docx"
+        elif fmt == "odt":
+            result["tier"] = "odt"
         elif size_mb < 5:
             result["tier"] = "small"
         else:

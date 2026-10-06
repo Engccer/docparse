@@ -2,7 +2,7 @@
 """
 OpenAI 문서 파서 (docparse).
 
-  python parsers/openai_parse.py <파일.pdf|.png|.jpg|.webp|.gif|.docx|.pptx|.xlsx>
+  python parsers/openai_parse.py <파일.pdf|.png|.jpg|.webp|.gif|.docx|.pptx|.xlsx|.odt>
       [--model gpt-5.6-terra] [--effort medium] [--detail auto]
       [--pages-per-call 8] [--max-output 32768] [--verbosity high]
     → <파일>_openai.md
@@ -21,7 +21,7 @@ PDF·이미지를 넣고 범용 멀티모달 모델이 마크다운을 쓰게 �
 잘라 여러 번 호출하고(PyMuPDF로 쪽 구간 PDF를 만들어 보낸다), 구간 경계를 주석으로 남긴다.
 `--pages-per-call 0`이면 파일 전체를 1회 호출한다(PyMuPDF 불필요, 장문에서는 권장하지 않음).
 
-⚠️ Office(.docx·.pptx·.xlsx)는 API가 받되 **텍스트만 추출하고 쪽 이미지·도표를 보지 않는다.**
+⚠️ Office(.docx·.pptx·.xlsx·.odt)는 API가 받되 **텍스트만 추출하고 쪽 이미지·도표를 보지 않는다.**
 품질은 로컬 결정론 파서(docx_local·xlsx_local)가 낫지만 그것은 등급이지 입력 경계가 아니므로,
 받을 수 있는 형식은 받아 둔다(로컬 파서가 텍스트박스·각주 등으로 거부·승격할 때의 후보).
 HWPX는 API가 형식 자체를 모르므로 지원하지 않는다.
@@ -76,6 +76,9 @@ OFFICE_MIME = {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    # ODT는 로컬 파서가 없어 이 경로가 1순위다. 결과 첫 줄에 meta.xml의 dc:title·
+    # 북마크 안내문("본문을 입력하십시오")이 섞여 나올 수 있으니 원본 역할을 확인한다.
+    ".odt": "application/vnd.oasis.opendocument.text",
 }
 SUPPORTED_EXT = set(IMAGE_MIME) | set(OFFICE_MIME) | {".pdf"}
 
@@ -320,7 +323,7 @@ def main():
         return 1
 
     if not path:
-        print("사용: python openai_parse.py <파일.pdf|.png|.jpg|.webp|.gif|.docx|.pptx|.xlsx> "
+        print("사용: python openai_parse.py <파일.pdf|.png|.jpg|.webp|.gif|.docx|.pptx|.xlsx|.odt> "
               "[--model gpt-5.6-terra] [--effort medium] [--detail auto] "
               "[--pages-per-call 8] [--max-output 32768] [--verbosity high]")
         print(f"지원 형식: {', '.join(sorted(SUPPORTED_EXT))}")
