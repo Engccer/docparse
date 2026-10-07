@@ -43,7 +43,7 @@ def test_main_passes_page_count_to_hints(tmp_path, monkeypatch, capsys):
 
 def test_odt_is_supported_and_routed_to_openai():
     assert D.SUPPORTED_FORMATS[".odt"] == "odt"
-    assert D.recommend_parsers("odt", "odt", True, False) == ["openai"]
+    assert D.recommend_parsers("odt", "odt", True, False) == ["openai", "mistral"]
 
 
 def test_main_assigns_odt_tier(tmp_path, monkeypatch, capsys):
@@ -56,8 +56,13 @@ def test_main_assigns_odt_tier(tmp_path, monkeypatch, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["format"] == "odt"
     assert out["tier"] == "odt"
-    assert out["recommended_parsers"] == ["openai"]
+    assert out["recommended_parsers"] == ["openai", "mistral"]
     assert any("content.xml" in h for h in out["rule_hints"])
+
+
+def test_mistral_parser_accepts_odt():
+    M = load("parsers/mistral_parse.py", "mistral_parse")
+    assert M.MIME_TYPES[".odt"] == "application/vnd.oasis.opendocument.text"
 
 
 def test_openai_parser_accepts_odt():

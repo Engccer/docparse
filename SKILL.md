@@ -125,7 +125,7 @@ JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 
 | **hwpx** | HWPX 파일 | hwpx_local(로컬·무료) 우선, 이미지·레이아웃 중요 시 Upstage 교차/대체 | hwpx_local |
 | **xlsx** | XLSX 파일 | xlsx_local(로컬·무료) 우선, 검증 실패·차트 텍스트 중요 시 Upstage·LlamaParse | xlsx_local |
 | **docx** | DOCX 파일 | docx_local(로컬·무료) 우선, 거부(텍스트박스·각주 등) 시 Upstage·LlamaParse | docx_local |
-| **odt** | ODT 파일 | OpenAI 직접 입력(텍스트 보존 실측 1건). Pandoc 단독 변환 금지(표·상하단 정보 누락), 결과를 content.xml 문단과 전수 대조 | openai |
+| **odt** | ODT 파일 | OpenAI 직접 입력(텍스트 보존 실측 1건) + Mistral 본문 교차(표 머리행 소실). Pandoc 단독 변환 금지(표·상하단 정보 누락), 결과를 content.xml 문단과 전수 대조 | openai |
 | **small** | PDF ≤15p | Gemini 단독 | Gemini |
 | **medium** | PDF 16~60p | LlamaParse v2 + Upstage | LlamaParse v2 |
 | **large** | PDF 61~100p | LlamaParse v2 + ODL | LlamaParse v2 |
@@ -144,7 +144,7 @@ small~xlarge의 쪽수는 텍스트 레이어가 있는 PDF 기준이다. 스캔
 
 **Office 로컬 티어 (XLSX·DOCX)**: XLSX·DOCX는 셀 값·병합 범위·헤딩 스타일이 파일 XML에 명시된 포맷이라 Tier 0 철학(원본이 명시적이면 LLM 추론은 하방 위험)이 그대로 적용된다. `xlsx_local_parse.py`(openpyxl + 원시 XML 값 멀티셋 교차 검증)·`docx_local_parse.py`(python-docx + document.xml 전수 recall 대조)를 먼저 쓰고, **PASS면 그대로 채택**(`_fused_v3_xlsxlocal.md`/`_fused_v3_docxlocal.md`, Step 5·6 생략, Step 7 최종 점검은 한다). 거부(검증 불일치·텍스트박스·각주·중첩 표) 시 Upstage·LlamaParse로 승격한다. 근거·경계는 tier-rules 「XLSX·DOCX」 절.
 
-**ODT**: 로컬 파서가 없고 수용이 확인된 클라우드 파서가 OpenAI 하나라 교차검증 상대가 없다. 대신 **원본 `content.xml`의 비어 있지 않은 말단 `text:p` 문단을 공백 정규화해 출력과 전수 대조**하고(문단 내용·표 셀 대응·읽기 순서·중복까지), PASS면 `_fused_v3_openai.md`로 채택한다. 이 대조가 Step 5·6을 대신하고 Step 9a의 "3종째 파서" 요구는 해당 없다(시각 판독이 필요하면 LibreOffice로 PDF 변환 뒤 Read). 첫 줄의 `dc:title` 안내문 혼입·빈 셀 `-` 채움·결재표 재배치는 대조로 잡히지 않으니 Step 7에서 본다. 근거·경계는 tier-rules 「비PDF 문서 포맷별 파서 선택」 ODT 행.
+**ODT**: 로컬 파서가 없고, Mistral은 표 머리행을 빠뜨려 본문 텍스트 교차에만 쓸 수 있다. 표·구조의 검증 상대가 없으므로 **원본 `content.xml`의 비어 있지 않은 말단 `text:p` 문단을 공백 정규화해 출력과 전수 대조**하고(문단 내용·표 셀 대응·읽기 순서·중복까지), PASS면 `_fused_v3_openai.md`로 채택한다. 이 대조가 Step 5·6을 대신하고 Step 9a의 "3종째 파서" 요구는 해당 없다(시각 판독이 필요하면 LibreOffice로 PDF 변환 뒤 Read). 첫 줄의 `dc:title` 안내문 혼입·빈 셀 `-` 채움·결재표 재배치는 대조로 잡히지 않으니 Step 7에서 본다. 근거·경계는 tier-rules 「비PDF 문서 포맷별 파서 선택」 ODT 행.
 
 **Primary 선택 원칙**: 자동화로 교정 불가능한 결함이 적은 파서를 Primary로. LlamaParse v2가 medium~xlarge 최적 (목차 정리, 표 열 정확, 노이즈 0건, LaTeX 0건). 크레딧 부족 시 ODL Primary + Upstage 교차검증으로 폴백(텍스트 레이어가 있을 때. 스캔본은 tier-rules 「텍스트 레이어 없음」). **Mistral ocr-4는 헤딩 구조를 생성해 텍스트PDF 폴백 Primary 후보**이나, 노이즈·OCR 글자 드리프트 후처리가 전제다(tier-rules 「Mistral ocr-4 헤딩 생성」).
 

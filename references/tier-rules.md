@@ -396,7 +396,7 @@ Claude Code의 `Read` 도구는 ≤20p PDF를 시각 이미지로 렌더링해 �
 | HWPX | `hwpx_local_parse.py` (1순위) | 무료, 로컬, hwpx-tomd 엔진. 표 구조 정확·자가검증 내장. recall 미달·마커 누락 경고면 출력 미작성(Upstage 승격), 이미지 내 텍스트·레이아웃 중요 시 Upstage 교차/대안 |
 | HWP | HWPX 변환 후 `hwpx_local_parse.py` | `hwpx-automation/convert/hwp2hwpx.bat`(Windows)·`.sh`(macOS/Linux)로 변환 → HWPX와 동일 처리 |
 | DOCX | `docx_local_parse.py` (1순위) | 무료, 로컬. 전수 recall 대조 PASS면 채택, 텍스트박스·각주·중첩 표는 거부하고 Upstage·LlamaParse v2로 승격 |
-| ODT | `openai_parse.py` (1순위) | 로컬 파서 없음. Responses API가 ODT를 직접 받아 텍스트를 보존한다(공문 1건 실측: `content.xml` 말단 문단 68개 전부 존재). **Pandoc 단독 변환은 표·상단 기관명·하단 시행·접수·연락처를 조용히 빠뜨리므로 종료 코드 0을 완료로 보지 않고** 결과를 `content.xml` 문단과 전수 대조한다. 첫 줄에 `meta.xml`의 `dc:title`·북마크 안내문("본문을 입력하십시오")이 섞여 나오면 원본 역할을 확인하고 뺀다(문자열 무조건 삭제 금지). 빈 셀 `-` 채움·결재표 재배치가 있어 문자 보존 검사가 셀 구조 보존을 보장하지 않는다. 내장 이미지는 추출되지 않는다. 원문의 비표준 표기(`15;00`)는 OCR 오류로 교정하지 않는다. ODL은 PDF 전용이라 거부, Mistral은 OpenDocument 지원을 발표했으나 호출 제한(429)으로 미검증 |
+| ODT | `openai_parse.py` (1순위) | 로컬 파서 없음. Responses API가 ODT를 직접 받아 텍스트를 보존한다(공문 1건 실측: `content.xml` 말단 문단 68개 전부 존재). **Pandoc 단독 변환은 표·상단 기관명·하단 시행·접수·연락처를 조용히 빠뜨리므로 종료 코드 0을 완료로 보지 않고** 결과를 `content.xml` 문단과 전수 대조한다. 첫 줄에 `meta.xml`의 `dc:title`·북마크 안내문("본문을 입력하십시오")이 섞여 나오면 원본 역할을 확인하고 뺀다(문자열 무조건 삭제 금지). 빈 셀 `-` 채움·결재표 재배치가 있어 문자 보존 검사가 셀 구조 보존을 보장하지 않는다. 내장 이미지는 추출되지 않는다. 원문의 비표준 표기(`15;00`)는 OCR 오류로 교정하지 않는다. Mistral은 ODT를 받지만 **표 머리행을 통째로 빠뜨리고** 짧은 문단을 한 줄로 병합한다(합성 공문 1건: 표 2개 모두 머리행 소실, 수신·제목 병합) → 본문 텍스트 교차용으로만 쓰고 표는 OpenAI 출력 기준. ODL은 PDF 전용이라 거부 |
 | XLSX | `xlsx_local_parse.py` (1순위) | 무료, 로컬. 원시 XML 값 멀티셋 대조 PASS면 채택, 불일치·차트 텍스트 필요 시 Upstage·LlamaParse v2로 승격 |
 | PPTX | Upstage + LlamaParse v2 | Mistral 선택 추가 가능. 로컬 파서 없음(미검증 포맷) |
 | JPG/PNG | Upstage + Gemini | OCR + 텍스트 품질 |
@@ -416,7 +416,7 @@ Claude Code의 `Read` 도구는 ≤20p PDF를 시각 이미지로 렌더링해 �
 | HWPX | **hwpx_local (1순위)** | O | - | - | - | - |
 | HWP | hwpx_local (변환 후) | O | - | - | - | - |
 | DOCX | **docx_local (1순위)** | O | - | O | O | - |
-| ODT | - | 미확인 | - | 미확인(공식 목록엔 ODS만) | 미확인(발표는 지원, 실호출 429) | - (PDF 전용) |
+| ODT | - | 미확인 | - | 미확인(공식 목록엔 ODS만) | O (표 머리행 소실) | - (PDF 전용) |
 | PPTX | - | O | - | O | O | - |
 | XLSX | **xlsx_local (1순위)** | O | - | O | - | - |
 

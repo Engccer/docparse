@@ -12,6 +12,20 @@ import base64
 import traceback
 
 
+# MIME 타입 매핑. ODT는 받되 표 머리행(table-header-rows)을 통째로 빠뜨린다
+# (2026-10 합성 공문 1건: 표 2개 모두 머리행 소실, 수신·제목 두 문단 한 줄 병합).
+# 본문 텍스트 교차용으로만 쓰고 표 구조는 openai 출력을 기준으로 본다.
+MIME_TYPES = {
+    '.pdf': 'application/pdf',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.odt': 'application/vnd.oasis.opendocument.text',
+}
+
+
 def main():
     """반환값이 종료 코드다(0 성공 / 1 실패)."""
     try:
@@ -31,16 +45,6 @@ def main():
         return 1
 
     client = Mistral(api_key=api_key)
-
-    # MIME 타입 매핑
-    MIME_TYPES = {
-        '.pdf': 'application/pdf',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    }
 
     # 파일을 Base64로 인코딩하는 함수
     def encode_file_to_base64(file_path):

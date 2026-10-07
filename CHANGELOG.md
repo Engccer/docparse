@@ -5,7 +5,7 @@
 ## 2026-10-06 (1.6.0: ODT 지원 + 시험지 규칙 보강)
 
 ### 추가
-- **ODT 티어**: `assess_document.py`가 `.odt`를 진단하고(티어 `odt`, 추천 `openai`), `openai_parse.py`가 ODT MIME을 등록한다. 진단 힌트로 Pandoc 단독 변환의 조용한 누락(content.xml 전수 대조 필수)과 `dc:title` 안내문 혼입 검사를 낸다. tier-rules 비PDF 표·호환성 매트릭스에 ODT 행. Mistral·LlamaParse·Upstage의 ODT 수용은 미확인으로 둔다(Mistral은 실호출 429).
+- **ODT 티어**: `assess_document.py`가 `.odt`를 진단하고(티어 `odt`, 추천 `openai`), `openai_parse.py`가 ODT MIME을 등록한다. 진단 힌트로 Pandoc 단독 변환의 조용한 누락(content.xml 전수 대조 필수)과 `dc:title` 안내문 혼입 검사를 낸다. tier-rules 비PDF 표·호환성 매트릭스에 ODT 행. Mistral은 ODT를 받지만 표 머리행을 빠뜨려 본문 교차 2순위로만 추천(`mistral_parse.py` MIME 등록). LlamaParse·Upstage의 ODT 수용은 미확인.
 - **시험지 절**: 밑줄·빈칸이 hwpx_local·ODL·PyMuPDF 전부에서 소실돼 교차검증으로 잡히지 않으므로 대조 통과 후에도 전 쪽 렌더 판독을 건너뛰지 않는다(HWPX 쪽 근본 원인은 `Engccer/hwpx-tomd#3`). 지문 머리 만화·삽화가 문항 근거인 경우의 시각 판독 규칙, 키 없는 환경의 대안 3자 조합.
 
 ## 2026-09-27 (1.5.0: 정합성 감사 반영 + 결함 수정)

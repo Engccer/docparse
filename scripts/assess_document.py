@@ -255,9 +255,10 @@ def recommend_parsers(fmt, tier, has_text_layer, table_hint, lang="ko"):
         parsers = ["upstage", "llamaparse"]
     elif fmt == "odt":
         # 로컬 파서 없음. OpenAI Responses API가 ODT를 직접 받아 텍스트를 보존한다
-        # (공문 1건 실측: content.xml 말단 문단 68개 전부 출력에 존재). Pandoc 단독
-        # 변환은 표·상하단 정보를 조용히 빠뜨리고, ODL은 PDF 전용이라 받지 않는다.
-        parsers = ["openai"]
+        # (공문 1건 실측: content.xml 말단 문단 68개 전부 출력에 존재). Mistral도 ODT를
+        # 받지만 표 머리행을 빠뜨리므로 본문 텍스트 교차용 2순위. Pandoc 단독 변환은
+        # 표·상하단 정보를 조용히 빠뜨리고, ODL은 PDF 전용이라 받지 않는다.
+        parsers = ["openai", "mistral"]
     elif fmt == "xlsx":
         # 로컬·무료 파서 우선. 원시 XML 교차 검증 불일치·차트 텍스트 중요 시 승격.
         parsers = ["xlsx_local", "upstage", "llamaparse"]

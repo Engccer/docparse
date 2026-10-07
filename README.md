@@ -37,7 +37,7 @@
 | **hwpx** | HWPX 파일 | hwpx_local 우선, 이미지/레이아웃 중요 시 Upstage 교차검증 | hwpx_local |
 | **xlsx** | XLSX 파일 | xlsx_local 우선, 검증 실패·차트 텍스트 중요 시 승격 | xlsx_local |
 | **docx** | DOCX 파일 | docx_local 우선, 거부(텍스트박스·각주 등) 시 승격 | docx_local |
-| **odt** | ODT 파일 | OpenAI 직접 입력, 결과를 content.xml과 대조(Pandoc 단독 변환은 표·상하단 누락) | openai |
+| **odt** | ODT 파일 | OpenAI 직접 입력 + Mistral 본문 교차, 결과를 content.xml과 대조(Pandoc 단독 변환은 표·상하단 누락) | openai |
 | **small** | PDF 15페이지 이하 | Gemini 단독 | Gemini |
 | **medium** | PDF 16~60페이지 | LlamaParse v2 + Upstage | LlamaParse v2 |
 | **large** | PDF 61~100페이지 | LlamaParse v2 + OpenDataLoader | LlamaParse v2 |
