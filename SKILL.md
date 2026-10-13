@@ -7,7 +7,7 @@ description: >
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
 metadata:
-  version: "1.6.0"
+  version: "1.6.1"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
@@ -39,7 +39,7 @@ metadata:
 | `upstage_parse.py` | `_upstage.md` | UPSTAGE_API_KEY | 노이즈 필터링 최강, 완전성 최고. header/footer/page_number로 제거한 텍스트는 표준 출력에 표본을 남긴다 |
 | `gemini_parse.py` | `_gemini.md` | GEMINI_API_KEY | `gemini-flash-latest`(서버 별칭, thinking 모델. 세대는 check-stack-updates가 감시). 텍스트 품질·체크박스·한글이름 최상이나 **장문에서 요약화 위험**. 기본 `thinking_budget=0`(요약화 방지·충실 전사), `--thinking`으로 켜면 체크박스·정밀 판독↑(소형 보조용). 출력이 토큰 한도에서 잘리면 저장하지 않는다. small(≤15p)만 Primary |
 | `llamaparse_parse.py` | `_llamaparse.md` | LLAMAPARSE_API_KEY | **v2 agentic 기본**. 표 열 정확도·OCR 우수. 10크레딧/p |
-| `mistral_parse.py` | `_mistral.md` | MISTRAL_API_KEY | `mistral-ocr-4`. 대용량 완전성 + **헤딩 구조 생성(ocr-4 신규)**, 교차 검증용. 노이즈·OCR 글자 드리프트·수기 과잉교정 잔존 |
+| `mistral_parse.py` | `_mistral.md` | MISTRAL_API_KEY | `mistral-ocr-latest`(현재 ocr-4 세대). 대용량 완전성 + **헤딩 구조 생성(ocr-4 신규)**, 교차 검증용. 노이즈·OCR 글자 드리프트·수기 과잉교정 잔존 |
 | `opendataloader_parse.py` | `_opendataloader.md` | 없음 (로컬) | Java 필요, PDF 전용, 텍스트 레이어 필수 |
 | `corepin_parse.py` | `_corepin.md` | COREPIN_API_KEY | AI3 OSS 엔진 라우터(텍스트PDF→opendataloader, HWP/HWPX→kordoc, Office→markitdown, **스캔→AI3 자체 OCR**) + 한국어 필터 SLM. 18종 단일 API, 장당 2원. **스캔 양식에서 표 구조 소실 검증됨** → Primary 부적합, 보조/비교용 |
 | `cohere_parse.py` | `_cohere.md` | COHERE_API_KEY | `parse-v5.0`(Cohere Parse, 2.3B VLM·8,192 토큰). 마크다운 + HTML 표 + 이미지 설명. **한국어가 9개 안정 지원 언어에 포함**, $1.50/1,000쪽(트라이얼 키 월 1,000콜 무료). ⚠️ 엔드포인트가 **이미지만** 받아 PDF는 PyMuPDF 렌더 후 **쪽당 1회 호출**(쪽수=호출수=과금). 쪽당 출력이 8,192 토큰에 닿으면 잘릴 수 있어 근접 시 경고. **아직 실측 등급 없음** — 티어 배정 없이 후보로만 존재 |
