@@ -46,6 +46,7 @@ for _stream in (sys.stdout, sys.stderr):
 SUPPORTED_EXTENSIONS = [".docx"]
 MAX_PROBLEM_SAMPLES = 10
 NS_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+NS_M = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
 HEADING_RE = re.compile(r"^(?:Heading|제목)\s*(\d)$")
 
 
@@ -69,10 +70,9 @@ def _count_silent_loss_markers(xml_text):
 
     반환: (sym_count, omath_count, image_count)
     """
-    sym = xml_text.count("<w:sym ") + xml_text.count("<w:sym/")
-    omath = xml_text.count("<m:oMath>") + xml_text.count("<m:oMath ")
-    images = xml_text.count("<w:drawing>") + xml_text.count("<w:drawing ")
-    return sym, omath, images
+    # 접두사 이름·빈 요소 직렬화는 의미가 없다. URI와 지역 이름으로 판정한다.
+    tags = Counter(element.tag for element in ET.fromstring(xml_text).iter())
+    return tags[f"{NS_W}sym"], tags[f"{NS_M}oMath"], tags[f"{NS_W}drawing"]
 
 
 def _cell_md(text):
