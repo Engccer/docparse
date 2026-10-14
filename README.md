@@ -1,8 +1,8 @@
 # docparse
 
-> English summary: an adaptive document parsing toolkit. It pre-diagnoses a document, picks the best parser combination for that document's tier, runs them, and fuses the results (Primary + Patch) into a single high-quality Markdown file. Works as a standalone CLI and as a Claude Code skill (`/docparse`).
+> English summary: an adaptive document parsing toolkit. It pre-diagnoses a document, picks the best parser combination for that document's tier, runs them, and fuses the results (Primary + Patch) into a single high-quality Markdown file. Works as a standalone CLI and as a coding-agent skill (`/docparse` in Claude Code). <!-- sanitize: allow install target -->
 
-**docparse**는 적응형 문서 파싱 도구입니다. 문서를 먼저 사전 진단해 그 문서의 티어에 맞는 최적의 파서 조합을 고르고, 실행한 뒤, 결과를 Primary + Patch 방식으로 퓨전하여 하나의 고품질 마크다운으로 만듭니다. 개별 파서를 직접 실행하는 독립 CLI로도, Claude Code 스킬(`/docparse`)로도 동작합니다.
+**docparse**는 적응형 문서 파싱 도구입니다. 문서를 먼저 사전 진단해 그 문서의 티어에 맞는 최적의 파서 조합을 고르고, 실행한 뒤, 결과를 Primary + Patch 방식으로 퓨전하여 하나의 고품질 마크다운으로 만듭니다. 개별 파서를 직접 실행하는 독립 CLI로도, 코딩 에이전트 스킬(Claude Code에서는 `/docparse`)로도 동작합니다. <!-- sanitize: allow 설치 대상 안내 -->
 
 ## 주요 특징
 
@@ -85,7 +85,7 @@ cp .env.example .env
 
 ## 사용법
 
-### Claude Code 스킬로
+### 에이전트 스킬로 (Claude Code 예시) <!-- sanitize: allow 검증 환경 예시 -->
 
 ```
 /docparse                       # 현재 디렉터리에서 지원 파일 자동 탐지
@@ -114,11 +114,11 @@ python parsers/opendataloader_parse.py input.pdf  # 로컬, 무료, Java 필요
 
 ## 이식성 (코딩 에이전트 호환)
 
-docparse는 Claude Code 스킬로 개발됐지만, 구성요소에 따라 다른 코딩 에이전트(Codex, Gemini CLI 등)에서도 쓸 수 있습니다.
+docparse는 Claude Code 스킬로 개발됐지만, 구성요소에 따라 다른 코딩 에이전트(Codex, Gemini CLI 등)에서도 쓸 수 있습니다. <!-- sanitize: allow 이식성 안내 -->
 
 - **완전 이식**: 모든 파서 스크립트(`parsers/*_parse.py`)와 보조 스크립트(`scripts/*`)는 표준 Python CLI입니다. API 키만 있으면 어떤 에이전트에서도, 또는 셸에서 직접 동작합니다. 진단·비교·채점 등 결정론적 처리도 모델과 무관합니다.
 - **실행 에이전트에 종속**: 손글씨 캐스케이드의 repair 단계, PDF 시각 판독(ground truth), 퓨전 판단은 스킬을 실행하는 에이전트 *자신의 비전·추론*으로 수행됩니다. 비-Claude 에이전트에서는 그 에이전트의 비전 모델이 이 역할을 맡으므로, 동작은 하지만 품질이 모델에 좌우됩니다(손글씨 충실도 약 98%는 Claude Opus 기준 수치입니다).
-- `SKILL.md` 워크플로우 자체는 Claude Code 관용(서브에이전트 위임, 시각 렌더링 등)을 전제로 작성돼 있습니다. 다른 에이전트에서는 개별 파서를 직접 호출하는 방식이 가장 이식성이 높습니다.
+- `SKILL.md` 워크플로우 자체는 Claude Code 관용(서브에이전트 위임, 시각 렌더링 등)을 전제로 작성돼 있습니다. 다른 에이전트에서는 개별 파서를 직접 호출하는 방식이 가장 이식성이 높습니다. <!-- sanitize: allow 이식성 안내 -->
 
 ## 무료 파서 vs 유료 파서
 
@@ -130,7 +130,7 @@ docparse는 Claude Code 스킬로 개발됐지만, 구성요소에 따라 다른
 - `docx_local` (`docx_local_parse.py`): DOCX 전용, `python-docx` 패키지 필요.
 - `opendataloader` (`opendataloader_parse.py`): 텍스트 레이어가 있는 PDF 전용, Java 런타임 필요.
 
-**유료 / 클라우드 (API 키 필요):** `upstage`, `gemini`, `llamaparse` (LlamaParse v2), `mistral`, `corepin`, `cohere`, `openai`, `gvision`. 여러 제공자가 월 무료 할당량을 주며, 가볍거나 가끔 쓰는 용도에는 충분합니다:
+**유료 / 클라우드 (API 키 필요):** `upstage`, `gemini`, `llamaparse` (LlamaParse v2), `mistral`, `corepin`, `cohere`, `openai`, `gvision`. 여러 제공자가 월 무료 할당량을 주며, 가볍거나 가끔 쓰는 용도에는 충분합니다: <!-- sanitize: allow 파서 토큰 gemini -->
 
 | 파서 | 무료 할당량 (제공자 정책에 따라 변동) | 비고 |
 |--------|---------------------------------------------|-------|

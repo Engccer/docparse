@@ -122,7 +122,7 @@ v2가 같은 흐름도를 mermaid 코드 블록과 이미지 placeholder로 동�
 
 ≤5개 챕터 문서에서 1~2건 빈도. 목차의 챕터 번호가 본문 P·A·R·T N 표기와 어긋날 수 있음. 본문 P·A·R·T 라벨을 ground truth로 삼아 검증 (예: 청각장애인교원 챕터가 PART 5인데 v2/Upstage 모두 Ⅳ로 추출 → 본문에서 `P·A·R·T 5` 확인 후 Ⅴ로 정정).
 
-`pdftoppm` 미설치 환경에서 PDF Read 도구 사용 불가 시, **PyMuPDF의 `page.get_text()`로 PART/Ⅴ 등 영문·로마숫자 직접 추출**하여 챕터 번호 검증 가능 (한글 인코딩 깨져도 영문 P·A·R·T·숫자는 정확).
+`pdftoppm` 미설치 환경에서 PDF 시각 판독 불가 시, **PyMuPDF의 `page.get_text()`로 PART/Ⅴ 등 영문·로마숫자 직접 추출**하여 챕터 번호 검증 가능 (한글 인코딩 깨져도 영문 P·A·R·T·숫자는 정확).
 
 ### 7. 다이어그램에만 정보 있는 페이지 보강
 

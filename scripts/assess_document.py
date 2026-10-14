@@ -291,7 +291,7 @@ def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None)
         if has_text_layer and tier in ("large", "xlarge"):
             hints.append("ODL Primary 채택 전 본문 숫자 검증")
         if pages is not None and pages <= 20:
-            hints.append("PDF Read 도구의 시각 렌더링 = ground truth (≤20p)")
+            hints.append("PDF 시각 판독 = ground truth (≤20p)")
     if fmt == "odt":
         hints.append("ODT: Pandoc 단독 변환은 표·상하단 정보를 조용히 빠뜨린다(content.xml 문단 전수 대조 필수)")
         hints.append("ODT: meta.xml dc:title·북마크 안내문이 본문 첫 줄에 섞이는지 검사")

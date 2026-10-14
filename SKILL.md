@@ -170,7 +170,7 @@ small~xlarge의 쪽수는 텍스트 레이어가 있는 PDF 기준이다. 스캔
 - 손글씨 위주 스캔 문서 (충실 전사 critical: 4단계 파이프라인·Vision→Claude 캐스케이드·신원 필드·학생 답안 합본)
 - 시험지·고사 원안·평가지 (옵션 텍스트 critical) + ◇ 수식이 있는 시험지(PUA 밀도 ≥100: LlamaParse v2 유일 Primary)
 - has_text_layer: true인데 pdftotext만 한글을 못 뽑는 경우 (스캔으로 오판 금지)
-- ◇ ≤20p 소형 PDF (Read 시각 렌더링 = ground truth)
+- ◇ ≤20p 소형 PDF (PDF 시각 판독 = ground truth)
 - 비PDF 포맷 (PPTX·이미지·호환성 매트릭스. HWP·HWPX 절차는 `references/hwpx.md`)
 - 의무기록·법률문서·계약서 (정확성 critical, 페이지 티어 무관 3자 교차: 「텍스트 레이어 없음」 절 말미. 포맷 게이트 PASS 채택이면 해당 없음: 「규칙 우선순위」)
 
@@ -227,7 +227,7 @@ timeout 300 python <스킬루트>/parsers/upstage_parse.py "<파일.hwpx>" < /de
 
 - 최종 fused 파일은 `<파일명>_fused_v3_<파서조합>.md`다.
 - `<파서조합>`은 **실제로 이 결과물에 내용이 반영된 파서만** Primary부터 나열하고 `+`로 잇는다. 단순 대조만 하고 텍스트를 병합하지 않은 파서는 넣지 않는다(파일명이 곧 "무엇을 합쳤는가"의 기록이므로).
-- 파서 토큰은 개별 출력 접미사와 같다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`pdfplumber`·`xlsxlocal`·`docxlocal`·`corepin`·`gvision`·`cohere`·`openai`.
+- 파서 토큰은 개별 출력 접미사와 같다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`pdfplumber`·`xlsxlocal`·`docxlocal`·`corepin`·`gvision`·`cohere`·`openai`. <!-- sanitize: allow 파서 토큰 gemini -->
 - 예: LlamaParse Primary에 Upstage heading·메타데이터를 패치하면 `_fused_v3_llamaparse+upstage.md`, Mistral 단독 채택이면 `_fused_v3_mistral.md`, hwpx_local 단독이면 `_fused_v3_hwpxlocal.md`.
 - **Primary base를 만들 때는 Primary 파서명만 붙이고, Step 6에서 보조 파서 내용을 실제로 반영할 때마다 파일명에 `+<파서>`를 덧붙여 rename한다.**
 

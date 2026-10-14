@@ -6,7 +6,7 @@ from _load import load
 
 D = load("scripts/assess_document.py", "assess_document")
 SIG = {"sampled_pages": [1], "text_pages": 1, "pua_per_10k": 0.0, "latin_ratio": 0.0}
-READ = "PDF Read 도구의 시각 렌더링 = ground truth (≤20p)"
+READ = "PDF 시각 판독 = ground truth (≤20p)"
 
 
 def test_read_hint_for_18_pages_medium():
