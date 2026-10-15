@@ -2,6 +2,11 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
+## 2026-10-16
+
+### 변경
+- `parsers/gemini_parse.py`: 기본 thinking 억제를 `thinking_budget=0`에서 `thinking_level="low"`로 전환. Google이 후속 모델부터 `thinking_budget`을 400으로 거부한다고 공지했고, 현재 `gemini-flash-latest`(=gemini-3.8-flash)는 `minimal`을 거부해 `low`가 가장 낮은 단계다. 1쪽 PDF 실호출로 기본·`--thinking` 모두 확인.
+
 ## 2026-10-06 (1.6.0: ODT 지원 + 시험지 규칙 보강)
 
 ### 추가

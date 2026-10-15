@@ -37,7 +37,7 @@ metadata:
 | `docx_local_parse.py` | `_docxlocal.md` | 없음 (로컬) | **DOCX 전용·무료·오프라인·비-LLM**. 본문 블록(헤딩·단락·표)을 문서 순서대로 추출, document.xml 전수 recall 토큰 대조 내장. 텍스트박스·필드·각주 등 python-docx 사각지대는 누락으로 드러나 즉시 거부(조용한 유실 차단). 수식(OMML)·심볼 글리프·중첩 표도 거부, 이미지 내 텍스트는 범위 밖(머리글 포함 집계·경고) |
 | `pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬) | **괘선 표 PDF 전용(Tier 0)·무료·오프라인·비-LLM**. 격자 추출 + 좌표 재배치 양방향 자가검증(열 배정 오류·값 소실 검출) + PyMuPDF find_tables 독립 2엔진 교차 투표(PyMuPDF 필수, 없으면 출력 미작성), 빈 셀 보존, 환각·무단교정 구조적으로 없음. 스캔(출력 0)·괘선 없는 표·병합 셀은 범위 밖 |
 | `upstage_parse.py` | `_upstage.md` | UPSTAGE_API_KEY | 노이즈 필터링 최강, 완전성 최고. header/footer/page_number로 제거한 텍스트는 표준 출력에 표본을 남긴다 |
-| `gemini_parse.py` | `_gemini.md` | GEMINI_API_KEY | `gemini-flash-latest`(서버 별칭, thinking 모델. 세대는 check-stack-updates가 감시). 텍스트 품질·체크박스·한글이름 최상이나 **장문에서 요약화 위험**. 기본 `thinking_budget=0`(요약화 방지·충실 전사), `--thinking`으로 켜면 체크박스·정밀 판독↑(소형 보조용). 출력이 토큰 한도에서 잘리면 저장하지 않는다. small(≤15p)만 Primary |
+| `gemini_parse.py` | `_gemini.md` | GEMINI_API_KEY | `gemini-flash-latest`(서버 별칭, thinking 모델. 세대는 check-stack-updates가 감시). 텍스트 품질·체크박스·한글이름 최상이나 **장문에서 요약화 위험**. 기본 `thinking_level="low"`(요약화 방지·충실 전사), `--thinking`으로 켜면 체크박스·정밀 판독↑(소형 보조용). 출력이 토큰 한도에서 잘리면 저장하지 않는다. small(≤15p)만 Primary |
 | `llamaparse_parse.py` | `_llamaparse.md` | LLAMAPARSE_API_KEY | **v2 agentic 기본**. 표 열 정확도·OCR 우수. 10크레딧/p |
 | `mistral_parse.py` | `_mistral.md` | MISTRAL_API_KEY | `mistral-ocr-latest`(현재 ocr-4 세대). 대용량 완전성 + **헤딩 구조 생성(ocr-4 신규)**, 교차 검증용. 노이즈·OCR 글자 드리프트·수기 과잉교정 잔존 |
 | `opendataloader_parse.py` | `_opendataloader.md` | 없음 (로컬) | Java 필요, PDF 전용, 텍스트 레이어 필수 |
@@ -86,7 +86,7 @@ metadata:
 | **LlamaParse v2** | A | A | A | A+ | **A+** | 10크레딧/p, 스캔 수기 양식 열 이동 1건 |
 | **OpenDataLoader** | A- | A+ (100%) | B+ | B (h6 경향) | A | PDF·텍스트 레이어 전용, 이미지 설명 없음 |
 | **Mistral** | B+ | A+ (100%) | A- | **B+ (ocr-4 헤딩 생성)** | A- | 노이즈 후처리 필수, OCR 글자 드리프트, 수기 과잉교정 |
-| **Gemini** (latest/thinking) | B-(≤15p) | 소형 A / **장문 요약화 F** | A+ | A+ | A+ 포맷 / C 스캔 열(시프트 잔존) | **장문 Primary 금지**(요약화), ≤15p만. 체크박스·한글이름 A(thinking ON 보조). 기본 `thinking_budget=0` |
+| **Gemini** (latest/thinking) | B-(≤15p) | 소형 A / **장문 요약화 F** | A+ | A+ | A+ 포맷 / C 스캔 열(시프트 잔존) | **장문 Primary 금지**(요약화), ≤15p만. 체크박스·한글이름 A(thinking ON 보조). 기본 `thinking_level="low"` |
 | **Cohere Parse** (parse-v5.0) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 0건.** 이 줄의 등급은 평가 전까지 비운다(공급사 주장 ParseBench 79.2 > Mistral OCR 4 74.5는 근거가 아니다). confidence 미제공. 입력 제약은 위 파서 표 |
 | **OpenAI** (gpt-5.6) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 0건.** 이 줄의 등급은 평가 전까지 비운다(공급사 벤치마크는 근거가 아니다). 전용 파서가 아닌 범용 LLM이라 **구조적으로 Gemini와 같은 요약화 위험**을 안고 있고, 쪽 구간 분할은 완화일 뿐 제거가 아니다. 입력 제약(Office는 텍스트만, HWPX 미지원)은 위 파서 표 |
 | **Google Vision** (수기) | A-(수기 전용) | A(손글씨) | **A (오기 보존)** | F(미생성) | C(미지원) | **단어별 confidence 제공(평균 0.95+, 저신뢰 ~7%·잘 calibrated)**. 수기 오기 보존·환각 0. reading order 흐트러짐·체크박스 판정 불안정·클라우드 PII |
@@ -148,7 +148,7 @@ small~xlarge의 쪽수는 텍스트 레이어가 있는 PDF 기준이다. 스캔
 
 **Primary 선택 원칙**: 자동화로 교정 불가능한 결함이 적은 파서를 Primary로. LlamaParse v2가 medium~xlarge 최적 (목차 정리, 표 열 정확, 노이즈 0건, LaTeX 0건). 크레딧 부족 시 ODL Primary + Upstage 교차검증으로 폴백(텍스트 레이어가 있을 때. 스캔본은 tier-rules 「텍스트 레이어 없음」). **Mistral ocr-4는 헤딩 구조를 생성해 텍스트PDF 폴백 Primary 후보**이나, 노이즈·OCR 글자 드리프트 후처리가 전제다(tier-rules 「Mistral ocr-4 헤딩 생성」).
 
-**small 티어 Gemini 주의** (Gemini 규칙의 정본. 다른 문서의 Gemini 서술은 이 절을 따른다): `gemini-flash-latest`는 thinking 모델을 가리키는 서버 별칭이다(세대는 check-stack-updates가 감시). thinking이 켜지면 **장문(≳20p)에서 전사 대신 요약으로 빠져** 본문을 조용히 버리고 완결 문서처럼 위장한다(근거는 gotchas.md). `gemini_parse.py`는 이를 막기 위해 **기본 `thinking_budget=0` + `max_output_tokens=65536`**으로 충실 전사한다. **Gemini를 장문 Primary로 쓰지 말 것**(small ≤15p만). 단 thinking을 끄면 수기 자필 체크박스 판독이 약해지므로, 체크박스·한글이름 등 정밀 판독이 필요한 **보조 패치**에는 `gemini_parse.py <파일> --thinking`으로 켜서 별도 호출한다.
+**small 티어 Gemini 주의** (Gemini 규칙의 정본. 다른 문서의 Gemini 서술은 이 절을 따른다): `gemini-flash-latest`는 thinking 모델을 가리키는 서버 별칭이다(세대는 check-stack-updates가 감시). thinking이 켜지면 **장문(≳20p)에서 전사 대신 요약으로 빠져** 본문을 조용히 버리고 완결 문서처럼 위장한다(근거는 gotchas.md). `gemini_parse.py`는 이를 막기 위해 **기본 `thinking_level="low"` + `max_output_tokens=65536`**으로 충실 전사한다. **Gemini를 장문 Primary로 쓰지 말 것**(small ≤15p만). 단 thinking을 최소화하면 수기 자필 체크박스 판독이 약해지므로, 체크박스·한글이름 등 정밀 판독이 필요한 **보조 패치**에는 `gemini_parse.py <파일> --thinking`으로 켜서 별도 호출한다.
 
 #### 보정 규칙 (티어 결정 후 적용)
 

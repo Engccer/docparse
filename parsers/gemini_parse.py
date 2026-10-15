@@ -102,13 +102,14 @@ def main():
 
         # gemini-flash-latest는 서버측 최상위 stable flash 별칭이라 세대가 자동으로 따라온다
         # (2026-06-28 확인 시 gemini-3.5-flash, 2026-08-26 확인 시 gemini-3.7-flash). 전부 thinking 모델.
-        # 기본은 thinking 비활성화: thinking을 켜면 장문(≳20p)에서 전사 대신 "요약"으로 빠져
+        # 기본은 thinking 최소화(thinking_level="low". 3.8-flash는 minimal 미지원, thinking_budget은 새 모델에서 400).
+        # thinking을 켜면 장문(≳20p)에서 전사 대신 "요약"으로 빠져
         # 본문 대부분을 조용히 버리고 완결된 문서처럼 위장하는 부작용이 있다(187p 실측). max_output_tokens도
         # 상향해 truncation을 줄인다. --thinking 옵션으로 켜면 수기 체크박스·한글이름 판독 정밀도가
         # 올라가나(소형 문서 보조 패치용), 장문 전사 Primary로는 끄고 쓴다.
         gen_config = types.GenerateContentConfig(max_output_tokens=65536)
         if not use_thinking:
-            gen_config.thinking_config = types.ThinkingConfig(thinking_budget=0)
+            gen_config.thinking_config = types.ThinkingConfig(thinking_level="low")
 
         def _call():
             return client.models.generate_content(
