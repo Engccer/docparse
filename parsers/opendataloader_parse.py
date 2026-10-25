@@ -2,7 +2,7 @@
 
   python opendataloader_parse.py "<파일.pdf>"   → <파일>_opendataloader.md
 
-실패 계약(2026-08-31): 마크다운이 생성되지 않거나 표 기호·공백을 제외한 실제
+실패 계약: 마크다운이 생성되지 않거나 쪽 주석·표 기호·공백을 제외한 실제
 글자가 0이면 출력 파일을 만들지 않고 종료 코드 1. 실행 시작 시 같은 이름의
 이전 출력을 지운다.
 """
@@ -22,7 +22,9 @@ try:
 except Exception:
     pass
 
-# 표 기호·페이지 구분자·공백을 뺀 "실제 글자"(gotchas.md의 빈 표 뼈대 함정 대응)
+# 래퍼가 삽입한 쪽 주석은 본문이 아니다. 저장할 Markdown에서는 보존한다.
+_PAGE_COMMENT = re.compile(r"<!--\s*Page\s+\d+\s*-->")
+# 표 기호·구분선·공백을 뺀 "실제 글자"(gotchas.md의 빈 표 뼈대 함정 대응)
 _NON_CONTENT = re.compile(r"[\s|\-:#>*`_<!\[\]()]")
 
 
@@ -102,9 +104,9 @@ def main():
             with open(temp_md_path, "r", encoding="utf-8") as f:
                 markdown_content = f.read()
 
-        content_chars = len(_NON_CONTENT.sub("", markdown_content))
+        content_chars = len(_NON_CONTENT.sub("", _PAGE_COMMENT.sub("", markdown_content)))
         if content_chars == 0:
-            print("오류: 표 기호·공백을 제외한 실제 글자가 0입니다(스캔본이거나 텍스트 레이어 없음).")
+            print("오류: 쪽 주석·표 기호·공백을 제외한 실제 글자가 0입니다(스캔본이거나 텍스트 레이어 없음).")
             print("→ 출력 파일을 만들지 않았습니다. OCR 파서(Upstage·LlamaParse)로 승격하세요.")
             return False
 
