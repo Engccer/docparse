@@ -16,13 +16,14 @@ PDF에 대한 서로 독립적인 두 관점이다. 단어 중심 좌표를 셀 
 셀(None 셀)도 span 정보가 평탄화되므로 감지 즉시 경고 대상이다. 경고가 하나라도
 있으면 출력 파일을 만들지 않는다 — 기존 티어(LlamaParse v2·Upstage 등)로 승격할 것.
 
-독립 2엔진 교차 투표(2026-08-10 추가): 위 두 관점은 모두 pdfplumber 내부라,
+PDF 추출 구현 간 교차 대조: 위 두 관점은 모두 pdfplumber 내부라,
 열 경계 오인처럼 격자·좌표가 같은 상류 결함을 공유하는 오류는 잡지 못한다.
-코드를 전혀 공유하지 않는 PyMuPDF find_tables()로 같은 표를 다시 추출해 표
-개수·구조(행x열)·셀 내용을 대조한다(crosscheck_with_fitz). 두 독립 구현이
-같은 결과에 도달해야만 PASS다. PyMuPDF는 필수 의존성이다(2026-08-31): 종전에는
+PyMuPDF find_tables()로 같은 표를 다시 추출해 표 개수·구조(행x열)·셀 내용을
+대조한다(crosscheck_with_fitz). PDF 텍스트·벡터 추출 구현은 다르지만,
+표 탐지 알고리즘에는 pdfplumber 포팅이라는 공통 계보가 있다.
+두 결과가 일치해야만 PASS다. PyMuPDF는 필수 의존성이다(2026-08-31): 종전에는
 미설치 시 교차 투표를 생략하고도 PASS를 냈는데, 그 PASS는 단일 엔진 자가검증만
-통과한 것이라 이 티어가 약속하는 "독립 2엔진 일치"가 아니다. 미설치면 출력을
+통과한 것이라 이 티어가 약속하는 "PDF 추출 구현 간 일치"가 아니다. 미설치면 출력을
 만들지 않고 설치를 안내한다(assess_document.py도 같은 패키지를 요구한다).
 
 종료 코드: 0 = PASS(출력 파일 생성), 1 = 오류·경고(출력 없음). 실행 시작 시
@@ -178,7 +179,14 @@ def _fitz_page_tables(filename, strategy="lines"):
     if not hasattr(getattr(fitz, "Page", None), "find_tables"):
         return None
     import contextlib
+    import inspect
     import io
+
+    options = {"strategy": strategy}
+    finder = getattr(getattr(fitz, "table", None), "find_tables", None)
+    if finder is not None and "use_layout" in inspect.signature(finder).parameters:
+        # layout 모델 유무와 무관하게 기존 괘선·텍스트 기반 대조를 유지한다.
+        options["use_layout"] = False
 
     pages = []
     with contextlib.redirect_stdout(io.StringIO()):
@@ -191,17 +199,17 @@ def _fitz_page_tables(filename, strategy="lines"):
                 pages.append([
                     ((t.bbox[0] + dx, t.bbox[1] + dy, t.bbox[2] + dx, t.bbox[3] + dy),
                      t.extract())
-                    for t in page.find_tables(strategy=strategy).tables
+                    for t in page.find_tables(**options).tables
                 ])
     return pages
 
 
 def crosscheck_with_fitz(filename, pages_tables, strategy="lines"):
-    """pdfplumber 격자를 독립 엔진(PyMuPDF find_tables)과 셀 단위 교차 투표.
+    """pdfplumber 격자를 PyMuPDF의 PDF 추출 결과와 셀 단위로 대조.
 
     verify_page(격자↔좌표)는 pdfplumber 내부의 두 관점이라, 두 관점이 같은
-    상류 결함(열 경계 오인 등)을 공유하면 통과해 버린다. 구현을 전혀 공유하지
-    않는 두 번째 엔진이 같은 구조·내용에 도달하는지 대조해 그 계층을 막는다.
+    상류 결함(열 경계 오인 등)을 공유하면 통과해 버린다. 다른 PDF 텍스트·벡터
+    추출 구현의 결과와 대조하되 표 탐지 알고리즘의 공통 계보까지 제거하지는 못한다.
 
     pages_tables: 페이지별 [(bbox, grid), ...] (pdfplumber 추출 결과)
     반환: (대조 셀 수, 문제 목록[str]) 또는 None(PyMuPDF 미가용)
@@ -366,13 +374,13 @@ def process_file(filename, strategy="lines"):
 
     cross = crosscheck_with_fitz(filename, pages_tables, strategy)
     if cross is None:
-        # 교차 투표 없는 PASS는 이 티어의 약속("독립 2엔진 일치")이 아니다.
-        print("오류: PyMuPDF(fitz)를 찾을 수 없어 독립 2엔진 교차 투표를 할 수 없습니다.")
+        # 교차 대조 없는 PASS는 이 티어의 약속을 충족하지 않는다.
+        print("오류: PyMuPDF(fitz)를 찾을 수 없어 PDF 추출 구현 간 교차 대조를 할 수 없습니다.")
         print("설치 명령: pip install -U pymupdf")
         print("→ 출력 파일을 만들지 않았습니다. 설치 후 재실행하거나 기존 티어로 승격하세요.")
         return False
     cross_checked, cross_problems = cross
-    print(f"교차 투표(pdfplumber / PyMuPDF find_tables 독립 2엔진): 셀 {cross_checked}건 대조")
+    print(f"교차 대조(pdfplumber / PyMuPDF find_tables): 셀 {cross_checked}건 대조")
 
     if all_problems or all_unassigned or merged_cells or cross_problems:
         print(
@@ -398,7 +406,7 @@ def process_file(filename, strategy="lines"):
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("\n\n".join(s for s in sections if s) + "\n")
     print(f"출력 파일: {output_file}")
-    print("=== PASS: 열 배정과 독립 2엔진 교차 투표까지 완전 일치 ===")
+    print("=== PASS: 열 배정과 PDF 추출 구현 간 교차 대조 일치 ===")
     return True
 
 

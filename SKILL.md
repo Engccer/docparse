@@ -7,7 +7,7 @@ description: >
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
 metadata:
-  version: "1.7.0"
+  version: "1.8.0"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
@@ -35,7 +35,7 @@ metadata:
 | `hwpx_local_parse.py` | `_hwpxlocal.md` | 없음 (로컬) | **HWPX 전용·무료·오프라인**. hwpx-tomd 패키지 엔진(글상자·tail·표 병합 보존, 자가검증 3종). `pip install hwpx-tomd` 필요. 단어/글자 recall 미달·마커 누락 경고면 출력 미작성(승격), 이미지 내 텍스트는 범위 밖(경고 후 출력 유지). HWP는 hwp2hwpx 변환 후 입력 |
 | `xlsx_local_parse.py` | `_xlsxlocal.md` | 없음 (로컬) | **XLSX 전용·무료·오프라인·비-LLM**. 셀 값·병합 범위·숨김 상태가 파일에 명시된 포맷이라 파싱=읽기. openpyxl 추출 전체를 원시 XML 자체 해석과 값 멀티셋 교차 검증, 불일치·도형 텍스트박스 존재 시 출력 미작성. 병합은 앵커+범위 명시, 숨김 데이터 보존·고지, 미계산 수식은 원문 보존, 셀 주석은 개수 고지. 차트·이미지 내 텍스트는 범위 밖(경고) |
 | `docx_local_parse.py` | `_docxlocal.md` | 없음 (로컬) | **DOCX 전용·무료·오프라인·비-LLM**. 본문 블록(헤딩·단락·표)을 문서 순서대로 추출, document.xml 전수 recall 토큰 대조 내장. 텍스트박스·필드·각주 등 python-docx 사각지대는 누락으로 드러나 즉시 거부(조용한 유실 차단). 수식(OMML)·심볼 글리프·중첩 표도 거부, 이미지 내 텍스트는 범위 밖(머리글 포함 집계·경고) |
-| `pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬) | **괘선 표 PDF 전용(Tier 0)·무료·오프라인·비-LLM**. 격자 추출 + 좌표 재배치 양방향 자가검증(열 배정 오류·값 소실 검출) + PyMuPDF find_tables 독립 2엔진 교차 투표(PyMuPDF 필수, 없으면 출력 미작성), 빈 셀 보존, 환각·무단교정 구조적으로 없음. 스캔(출력 0)·괘선 없는 표·병합 셀은 범위 밖 |
+| `pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬) | **괘선 표 PDF 전용(Tier 0)·무료·오프라인·비-LLM**. 격자 추출 + 좌표 재배치 양방향 자가검증(열 배정 오류·값 소실 검출) + PyMuPDF find_tables 교차 대조(서로 다른 PDF 추출 구현, 표 탐지 알고리즘 일부 공통 계보). PyMuPDF 필수, 없으면 출력 미작성. 빈 셀 보존, 환각·무단교정 구조적으로 없음. 스캔(출력 0)·괘선 없는 표·병합 셀은 범위 밖 |
 | `upstage_parse.py` | `_upstage.md` | UPSTAGE_API_KEY | 노이즈 필터링 최강, 완전성 최고. header/footer/page_number로 제거한 텍스트는 표준 출력에 표본을 남긴다 |
 | `gemini_parse.py` | `_gemini.md` | GEMINI_API_KEY | `gemini-flash-latest`(서버 별칭, thinking 모델. 세대는 check-stack-updates가 감시). 텍스트 품질·체크박스·한글이름 최상이나 **장문에서 요약화 위험**. 기본 `thinking_level="low"`(요약화 방지·충실 전사), `--thinking`으로 켜면 체크박스·정밀 판독↑(소형 보조용). 출력이 토큰 한도에서 잘리면 저장하지 않는다. small(≤15p)만 Primary |
 | `llamaparse_parse.py` | `_llamaparse.md` | LLAMAPARSE_API_KEY | **v2 agentic 기본**. 표 열 정확도·OCR 우수. 10크레딧/p |
@@ -133,7 +133,7 @@ JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 
 
 small~xlarge의 쪽수는 텍스트 레이어가 있는 PDF 기준이다. 스캔본은 Step 1의 한 단계 올린 티어와 tier-rules 「텍스트 레이어 없음」 절을 따른다.
 
-**Tier 0 (결정론 우선 게이트)**: `table_hint: true`(벡터 괘선 격자) + `has_text_layer: true`이고 **목표 산출물이 산문이 아니라 표 데이터**(시간표·명렬표·집계표·주간학습안내 등 행정 문서)면, 페이지 수 티어보다 먼저 `pdfplumber_parse.py`(로컬·무료·비-LLM)를 시도한다. 원본이 명시적일 때(그려진 격자 + 임베딩된 글자) LLM 추론은 순수한 하방 위험이기 때문이다. 격자↔좌표 자가검증과 PyMuPDF 독립 2엔진 교차 투표가 셀 위치까지 기계로 대조한다.
+**Tier 0 (결정론 우선 게이트)**: `table_hint: true`(벡터 괘선 격자) + `has_text_layer: true`이고 **목표 산출물이 산문이 아니라 표 데이터**(시간표·명렬표·집계표·주간학습안내 등 행정 문서)면, 페이지 수 티어보다 먼저 `pdfplumber_parse.py`(로컬·무료·비-LLM)를 시도한다. 원본이 명시적일 때(그려진 격자 + 임베딩된 글자) LLM 추론은 순수한 하방 위험이기 때문이다. 격자↔좌표 자가검증과 PyMuPDF 교차 대조가 셀 위치까지 기계로 대조한다.
 
 - **PASS**: 그대로 채택(`_fused_v3_pdfplumber.md`)하고 Step 5·6(무결성 게이트·교차 검증)을 생략한다. Step 7 최종 점검은 한다.
 - **경고**(셀 불일치·미배정 단어·병합 의심 셀·교차 엔진 불일치·표 미검출): 파서가 출력 파일을 만들지 않으므로 기본 티어 표로 승격한다.

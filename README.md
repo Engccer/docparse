@@ -16,7 +16,7 @@
 | 파서 | 스크립트 | 출력 | 필요 키 | 역할 |
 |--------|--------|--------|--------------|------|
 | **hwpx_local** | `parsers/hwpx_local_parse.py` | `_hwpxlocal.md` | 없음 (로컬, 무료) | HWPX 전용, 오프라인. 글상자·`<hp:t>` tail·병합 표 셀을 보존하고 자가검증 3종 수행. `hwpx-tomd` 패키지 필요. 이미지 내 텍스트는 범위 밖. |
-| **pdfplumber** | `parsers/pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬, 무료) | 괘선 표 PDF 전용(Tier 0), 오프라인, 비-LLM. 격자 추출과 좌표 재배치를 셀 단위로 양방향 대조하는 자가검증 + PyMuPDF find_tables 독립 2엔진 교차 투표 내장(열 배정 오류·공유 상류 결함 검출), 빈 셀 보존. 스캔·병합 셀·산문은 범위 밖. |
+| **pdfplumber** | `parsers/pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬, 무료) | 괘선 표 PDF 전용(Tier 0), 오프라인, 비-LLM. 격자 추출과 좌표 재배치를 셀 단위로 양방향 대조하는 자가검증 + PyMuPDF find_tables 교차 대조 내장(서로 다른 PDF 추출 구현, 표 탐지 알고리즘 일부 공통 계보), 빈 셀 보존. 스캔·병합 셀·산문은 범위 밖. |
 | **xlsx_local** | `parsers/xlsx_local_parse.py` | `_xlsxlocal.md` | 없음 (로컬, 무료) | XLSX 전용, 오프라인, 비-LLM. openpyxl 추출 전체를 원시 XML 자체 해석과 값 멀티셋으로 교차 검증. 병합 범위 명시 보존, 숨김 데이터 보존·고지, 미계산 수식은 원문 보존. 차트·이미지 내 텍스트는 범위 밖. |
 | **docx_local** | `parsers/docx_local_parse.py` | `_docxlocal.md` | 없음 (로컬, 무료) | DOCX 전용, 오프라인, 비-LLM. 본문 순서 보존 추출 + document.xml 전수 recall 대조. 텍스트박스·각주 등 유실 위험 구조는 즉시 거부(승격). 이미지 내 텍스트는 범위 밖. |
 | **upstage** | `parsers/upstage_parse.py` | `_upstage.md` | `UPSTAGE_API_KEY` | 베이스라인. 노이즈 필터링·완전성 최강, 메타데이터 우수. |
