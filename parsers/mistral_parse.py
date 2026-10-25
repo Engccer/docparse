@@ -10,6 +10,7 @@ import os
 import sys
 import base64
 import traceback
+import argparse
 
 
 # MIME 타입 매핑. ODT는 받되 표 머리행(table-header-rows)을 통째로 빠뜨린다
@@ -28,20 +29,46 @@ MIME_TYPES = {
 
 def main():
     """반환값이 종료 코드다(0 성공 / 1 실패)."""
+    parser = argparse.ArgumentParser(
+        description="Mistral OCR: 문서를 Markdown으로 변환합니다.",
+        epilog="환경변수: MISTRAL_API_KEY. 출력: <입력파일명>_mistral.md",
+        allow_abbrev=False,
+    )
+    parser.add_argument("input_file", nargs="?", help="입력 파일 (생략 시 현재 폴더에서 자동 탐색)")
+    args = parser.parse_args()
+    input_path = args.input_file
+    supported_files = []
+    if input_path is not None:
+        ext = os.path.splitext(input_path)[1].lower()
+        if ext not in MIME_TYPES:
+            print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
+            print(f"지원 형식: {', '.join(MIME_TYPES.keys())}")
+            return 1
+        if not os.path.isfile(input_path):
+            print(f"오류: 파일을 찾을 수 없습니다: {input_path}")
+            return 1
+    else:
+        supported_files = sorted([
+            f for f in os.listdir('.')
+            if os.path.isfile(f) and os.path.splitext(f)[1].lower() in MIME_TYPES
+        ])
+        if not supported_files:
+            print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
+            print(f"지원 형식: {', '.join(MIME_TYPES.keys())}")
+            return 1
+
+    api_key = os.environ.get("MISTRAL_API_KEY")
+    if not api_key:
+        print("오류: MISTRAL_API_KEY 환경 변수가 설정되지 않았습니다.")
+        print("설정 명령: export MISTRAL_API_KEY=\"your-api-key\"  (Windows: setx MISTRAL_API_KEY \"your-api-key\")")
+        return 1
+
     try:
         from mistralai.client import Mistral
     except ImportError as e:
         print("오류: mistralai 패키지를 찾을 수 없습니다.")
         print("설치 명령: pip install mistralai")
         print(f"상세: {e}")
-        return 1
-
-    # API 키 설정
-    try:
-        api_key = os.environ["MISTRAL_API_KEY"]
-    except KeyError:
-        print("오류: MISTRAL_API_KEY 환경 변수가 설정되지 않았습니다.")
-        print("설정 명령: export MISTRAL_API_KEY=\"your-api-key\"  (Windows: setx MISTRAL_API_KEY \"your-api-key\")")
         return 1
 
     client = Mistral(api_key=api_key)
@@ -136,25 +163,9 @@ def main():
         print(f"출력 파일: {output_file}")
         return True
 
-    # 명령줄 인수로 파일 경로 받기
-    if len(sys.argv) > 1:
-        input_path = sys.argv[1]
-        ext = os.path.splitext(input_path)[1].lower()
-        if ext not in MIME_TYPES:
-            print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
-            print(f"지원 형식: {', '.join(MIME_TYPES.keys())}")
-            return 1
-        if not os.path.exists(input_path):
-            print(f"오류: 파일을 찾을 수 없습니다: {input_path}")
-            return 1
+    if input_path:
         return 0 if process_file(input_path) else 1
 
-    # 현재 디렉토리에서 지원되는 파일 찾기
-    supported_files = sorted([f for f in os.listdir('.') if os.path.isfile(f) and os.path.splitext(f)[1].lower() in MIME_TYPES])
-    if not supported_files:
-        print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
-        print(f"지원 형식: {', '.join(MIME_TYPES.keys())}")
-        return 1
     if len(supported_files) == 1:
         return 0 if process_file(supported_files[0]) else 1
 

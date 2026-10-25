@@ -7,7 +7,7 @@ description: >
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
 metadata:
-  version: "1.6.1"
+  version: "1.7.0"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
@@ -178,7 +178,7 @@ small~xlarge의 쪽수는 텍스트 레이어가 있는 PDF 기준이다. 스캔
 
 선택된 파서만 병렬 실행. 제한 시간은 xlarge 600초, 그 외 300초. `< /dev/null`로 대화형 프롬프트 방지. `--lang`이 ko가 아니면 `llamaparse_parse.py`(`--lang <코드>`)·`gvision_parse.py`(`--lang <코드>,ko` 쉼표 목록)에도 넘긴다.
 
-**실행 계약**: 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이다. 오류·빈 결과·검증 실패·부분 결과(Gemini 토큰 절단, Upstage 배치 누락, Mistral 쪽수 불일치, Vision 페이지 호출 실패·전 쪽 빈 결과)는 출력 없이 1로 끝나며, 실행 시작 시 같은 이름의 이전 출력을 먼저 지운다. 따라서 **Step 4로 넘어가기 전에 종료 코드와 출력 파일 존재를 함께 확인**한다. 종료 코드가 0이 아닌데 파일이 있다면 그 파일은 이번 실행의 것이 아니다.
+**실행 계약**: **Step 4로 넘어가기 전에 종료 코드 0과 출력 파일의 존재·내용을 함께 확인**한다. 오류·빈 결과·검증 실패·부분 결과(Gemini 토큰 절단, Upstage 배치 누락, Mistral 쪽수 불일치, Vision 페이지 호출 실패·전 쪽 빈 결과)는 실패로 처리한다. LlamaParse·Mistral OCR은 `--help`·`-h`를 키·SDK 없이 종료 코드 0으로 표시하며, LlamaParse의 `--credits` 단독 조회와 자동 탐색에서 모두 건너뛴 경우도 출력 없이 0이다. 잘못된 인자는 2, 입력·처리 실패는 1이다. 두 파서는 입력 검증을 통과해 처리할 때 같은 이름의 이전 출력을 지우며, 인자·준비 단계에서 실패하면 이전 파일이 남을 수 있다. **비정상 종료된 실행의 출력 파일은 사용하지 않는다.**
 
 아래 예시는 bash(Git Bash·Linux) 기준이다.
 
@@ -219,7 +219,7 @@ timeout 300 python <스킬루트>/parsers/hwpx_local_parse.py "<파일.hwpx>" < 
 timeout 300 python <스킬루트>/parsers/upstage_parse.py "<파일.hwpx>" < /dev/null
 ```
 
-**접근성 우선 파싱** (장애인 안내자료·시각장애인 사용자 문서)에서는 `--instructions <스킬루트>/references/custom-prompts/accessible.txt`를 붙여 v2 `agentic_options.custom_prompt`를 주입한다. **옵션명은 `--instructions` 단 하나뿐**, 다른 이름(`--custom-prompt-file`, `--prompt` 등)은 인자 파서가 그 값을 두 번째 입력 파일로 인식해 accessible.txt를 LlamaParse로 별도 전송하므로 custom_prompt가 실제 적용되지 않는다.
+**접근성 우선 파싱** (장애인 안내자료·시각장애인 사용자 문서)에서는 `--instructions <스킬루트>/references/custom-prompts/accessible.txt`를 붙여 v2 `agentic_options.custom_prompt`를 주입한다. **옵션명은 `--instructions` 단 하나뿐**이며, 다른 이름(`--custom-prompt-file`, `--prompt` 등)은 API 요청 전에 인자 오류로 거부한다. 지시 파일은 비어 있지 않은 UTF-8 파일이어야 하며 `agentic`·`agentic_plus` 티어에서 적용된다.
 
 ### Step 4: Primary base 생성
 

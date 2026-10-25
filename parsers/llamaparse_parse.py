@@ -10,28 +10,11 @@
 import os
 import sys
 import traceback
+import argparse
 
 
 def main():
     """반환값이 종료 코드다(0 성공 / 1 실패)."""
-    try:
-        from llama_cloud import Client
-    except ImportError as e:
-        print("오류: llama-cloud 패키지를 찾을 수 없습니다.")
-        print("설치 명령: pip install llama-cloud")
-        print(f"상세: {e}")
-        return 1
-
-    # API 키 설정
-    try:
-        api_key = os.environ["LLAMAPARSE_API_KEY"]
-    except KeyError:
-        print("오류: LLAMAPARSE_API_KEY 환경 변수가 설정되지 않았습니다.")
-        print('설정 명령: setx LLAMAPARSE_API_KEY "your-api-key"')
-        return 1
-
-    client = Client(api_key=api_key)
-
     # 지원 형식 (LlamaParse는 130+ 포맷 지원)
     SUPPORTED_EXTS = {
         '.pdf', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif',
@@ -40,6 +23,72 @@ def main():
     }
 
     TIERS = ['fast', 'cost_effective', 'agentic', 'agentic_plus']
+
+    parser = argparse.ArgumentParser(
+        description="LlamaParse v2: 문서를 Markdown으로 변환합니다.",
+        epilog="환경변수: LLAMAPARSE_API_KEY. 기본 옵션: 연속 표 병합, 링크 주석. "
+               "티어별 크레딧/페이지: fast(1), cost_effective(3), agentic(10), agentic_plus(45).",
+        allow_abbrev=False,
+    )
+    parser.add_argument("files", nargs="*", help="입력 파일 (생략 시 현재 폴더에서 자동 탐색)")
+    parser.add_argument("--tier", choices=TIERS, default="agentic", help="파싱 티어 (기본: agentic)")
+    parser.add_argument("--lang", default="ko", help="OCR 언어 코드 (기본: ko)")
+    parser.add_argument("--instructions", metavar="FILE", help="UTF-8 파싱 지시 파일 (agentic·agentic_plus에서 적용)")
+    parser.add_argument("--credits", action="store_true", help="남은 크레딧 및 갱신일 확인")
+    args = parser.parse_intermixed_args()
+    tier, language, check_credits = args.tier, args.lang, args.credits
+    files_to_process = args.files
+    if not language.strip():
+        parser.error("--lang에는 비어 있지 않은 언어 코드를 지정해야 합니다")
+
+    # 명시한 입력 전체를 검사한 뒤에만 크레딧 조회·파싱을 시작한다.
+    for input_file in files_to_process:
+        ext = os.path.splitext(input_file)[1].lower()
+        if ext not in SUPPORTED_EXTS:
+            print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
+            print(f"지원 형식: {', '.join(sorted(SUPPORTED_EXTS))}")
+            return 1
+        if not os.path.isfile(input_file):
+            print(f"오류: 파일을 찾을 수 없습니다: {input_file}")
+            return 1
+
+    custom_prompt = None
+    if args.instructions is not None:
+        if not os.path.isfile(args.instructions):
+            print(f"오류: --instructions 파일을 찾을 수 없습니다: {args.instructions}")
+            return 1
+        with open(args.instructions, "r", encoding="utf-8") as f:
+            custom_prompt = f.read().strip()
+        if not custom_prompt:
+            print(f"오류: --instructions 파일이 비어 있습니다: {args.instructions}")
+            return 1
+
+    supported_files = []
+    if not files_to_process and not check_credits:
+        supported_files = sorted([
+            f for f in os.listdir('.')
+            if os.path.isfile(f) and os.path.splitext(f)[1].lower() in SUPPORTED_EXTS
+        ])
+        if not supported_files:
+            print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
+            print(f"지원 형식: {', '.join(sorted(SUPPORTED_EXTS))}")
+            return 1
+
+    api_key = os.environ.get("LLAMAPARSE_API_KEY")
+    if not api_key:
+        print("오류: LLAMAPARSE_API_KEY 환경 변수가 설정되지 않았습니다.")
+        print('설정 명령: setx LLAMAPARSE_API_KEY "your-api-key"')
+        return 1
+
+    try:
+        from llama_cloud import Client
+    except ImportError as e:
+        print("오류: llama-cloud 패키지를 찾을 수 없습니다.")
+        print("설치 명령: pip install llama-cloud")
+        print(f"상세: {e}")
+        return 1
+
+    client = Client(api_key=api_key)
 
     def get_output_filename(input_file):
         """입력 파일 경로를 기반으로 출력 파일 경로 생성"""
@@ -143,73 +192,6 @@ def main():
         print(f"출력 파일: {output_file}")
         return True
 
-    # 명령줄 인수 처리
-    print(f"인수: {sys.argv}")
-
-    # 옵션 파싱
-    tier = 'agentic'
-    language = 'ko'
-    check_credits = False
-    custom_prompt = None
-    files_to_process = []
-
-    i = 1
-    while i < len(sys.argv):
-        arg = sys.argv[i]
-        if arg == '--tier' and i + 1 < len(sys.argv):
-            tier = sys.argv[i + 1]
-            if tier not in TIERS:
-                print(f"오류: 지원하지 않는 파싱 티어: {tier}")
-                print(f"지원 티어: {', '.join(TIERS)}")
-                return 1
-            i += 2
-        elif arg == '--lang' and i + 1 < len(sys.argv):
-            language = sys.argv[i + 1]
-            i += 2
-        elif arg == '--credits':
-            check_credits = True
-            i += 1
-        elif arg == '--instructions' and i + 1 < len(sys.argv):
-            instr_path = sys.argv[i + 1]
-            if not os.path.exists(instr_path):
-                print(f"오류: --instructions 파일을 찾을 수 없습니다: {instr_path}")
-                return 1
-            with open(instr_path, 'r', encoding='utf-8') as f:
-                custom_prompt = f.read().strip()
-            if not custom_prompt:
-                print(f"오류: --instructions 파일이 비어 있습니다: {instr_path}")
-                return 1
-            i += 2
-        elif arg in ('--help', '-h'):
-            print("사용법: python llamaparse_parse.py [옵션] [파일경로]")
-            print()
-            print("옵션:")
-            print("  --tier TIER          파싱 티어 (fast, cost_effective, agentic, agentic_plus)")
-            print("                       기본값: agentic (10크레딧/페이지)")
-            print("  --lang LANG          OCR 언어 코드 (예: ko, en, ja, zh)")
-            print("                       기본값: ko")
-            print("  --instructions FILE  자연어 파싱 지시(custom_prompt) 파일 경로")
-            print("                       agentic·agentic_plus 티어에서만 적용")
-            print("                       예: 이미지 alt text 한국어 상세화, 헤딩 중복 억제 등")
-            print("  --credits            남은 크레딧 및 갱신일 확인")
-            print()
-            print("v2 기본 옵션: OCR 언어 자동 설정, 연속 표 병합, 링크 주석")
-            print("티어별 크레딧: fast(1) / cost_effective(3) / agentic(10) / agentic_plus(45)")
-            print("지원 형식: PDF, JPG, PNG, DOCX, PPTX, XLSX, HTML, TXT 등 130+")
-            print("환경변수: LLAMAPARSE_API_KEY")
-            print("무료: 월 10,000 크레딧 (cloud.llamaindex.ai)")
-            print()
-            print("예시:")
-            print("  python llamaparse_parse.py document.pdf")
-            print("  python llamaparse_parse.py --tier cost_effective report.pdf")
-            print("  python llamaparse_parse.py --instructions accessible.txt manual.pdf")
-            print("  python llamaparse_parse.py --credits")
-            print("  python llamaparse_parse.py  (현재 폴더에서 자동 탐색)")
-            return 0
-        else:
-            files_to_process.append(arg)
-            i += 1
-
     if check_credits:
         try:
             import httpx
@@ -234,28 +216,9 @@ def main():
     if files_to_process:
         all_ok = True
         for input_file in files_to_process:
-            ext = os.path.splitext(input_file)[1].lower()
-            if ext not in SUPPORTED_EXTS:
-                print(f"오류: 지원하지 않는 파일 형식입니다: {ext}")
-                print(f"지원 형식: {', '.join(sorted(SUPPORTED_EXTS))}")
-                all_ok = False
-                continue
-            if not os.path.exists(input_file):
-                print(f"오류: 파일을 찾을 수 없습니다: {input_file}")
-                all_ok = False
-                continue
             all_ok = process_file(input_file, tier, language, custom_prompt) and all_ok
         return 0 if all_ok else 1
 
-    # 현재 디렉토리에서 지원되는 파일 찾기
-    supported_files = sorted([
-        f for f in os.listdir('.')
-        if os.path.isfile(f) and os.path.splitext(f)[1].lower() in SUPPORTED_EXTS
-    ])
-    if not supported_files:
-        print("오류: 현재 디렉토리에 지원되는 파일이 없습니다.")
-        print(f"지원 형식: {', '.join(sorted(SUPPORTED_EXTS))}")
-        return 1
     if len(supported_files) == 1:
         return 0 if process_file(supported_files[0], tier, language, custom_prompt) else 1
 
