@@ -7,7 +7,7 @@ description: >
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
 metadata:
-  version: "1.8.0"
+  version: "1.8.1"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
