@@ -31,14 +31,6 @@ import sys
 import time
 from pathlib import Path
 
-# Windows PowerShell의 기본 cp949 stdout이 한국어 한자·이모지를 인코딩하지 못해
-# 첫 print에서 UnicodeEncodeError가 나면 진행이 멈춘 것처럼 보임. UTF-8 강제.
-try:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-except (AttributeError, OSError):
-    pass
-
 LLAMA_IMG_PATTERN = re.compile(
     # LlamaParse v2가 출력하는 두 가지 placeholder 패턴 모두 매칭
     #   1. 일반: page_N_image_M_v2.jpg                 (대부분)
@@ -229,8 +221,8 @@ def main():
                         help="이미 한국어인 alt는 건너뛰고 영문 alt만 재생성")
     parser.add_argument("--dpi", type=int, default=120,
                         help="페이지 렌더링 DPI (기본 120)")
-    parser.add_argument("--model", default="gemini-flash-latest",
-                        help="Gemini 모델 (기본 gemini-flash-latest, 서버측 stable flash 자동 추적)")
+    parser.add_argument("--model", default="gemini-4-hydrogen",
+                        help="Gemini 모델 (기본 gemini-4-hydrogen. 별칭 gemini-flash-latest는 폐지돼 404)")
     parser.add_argument("--prompt", type=Path,
                         help="custom 프롬프트 템플릿 파일. {alt_list} 자리표시자 포함")
     args = parser.parse_args()
@@ -288,4 +280,10 @@ def main():
 
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):
+        # Windows 한국어 콘솔(cp949)에서 출력이 깨지거나 예외가 나지 않게 한다. 실행할 때만 바꾼다.
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     main()

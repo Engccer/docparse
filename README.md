@@ -16,7 +16,7 @@
 | 파서 | 스크립트 | 출력 | 필요 키 | 역할 |
 |--------|--------|--------|--------------|------|
 | **hwpx_local** | `parsers/hwpx_local_parse.py` | `_hwpxlocal.md` | 없음 (로컬, 무료) | HWPX 전용, 오프라인. 글상자·`<hp:t>` tail·병합 표 셀을 보존하고 자가검증 3종 수행. `hwpx-tomd` 패키지 필요. 이미지 내 텍스트는 범위 밖. 밑줄 빈칸이 있으면 밑줄·빈칸 보존을 자동으로 켬(수동 `--underline`). |
-| **pdfplumber** | `parsers/pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬, 무료) | 괘선 표 PDF 전용(Tier 0), 오프라인, 비-LLM. 격자 추출과 좌표 재배치를 셀 단위로 양방향 대조하는 자가검증 + PyMuPDF find_tables 교차 대조 내장(서로 다른 PDF 추출 구현, 표 탐지 알고리즘 일부 공통 계보), 빈 셀 보존. 스캔·병합 셀·산문은 범위 밖. |
+| **pdfplumber** | `parsers/pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬, 무료) | 괘선 표 PDF 전용(Tier 0), 오프라인, 비-LLM. 격자 추출과 좌표 재배치를 셀 단위로 양방향 대조하는 자가검증 + PyMuPDF find_tables 교차 대조 내장(서로 다른 PDF 추출 구현, 표 탐지 알고리즘 일부 공통 계보), 빈 셀 보존, 복원 가능한 병합 칸은 HTML 표로 출력. 스캔·복원되지 않는 병합·산문은 범위 밖. |
 | **xlsx_local** | `parsers/xlsx_local_parse.py` | `_xlsxlocal.md` | 없음 (로컬, 무료) | XLSX 전용, 오프라인, 비-LLM. openpyxl 추출 전체를 원시 XML 자체 해석과 값 멀티셋으로 교차 검증. 병합 범위 명시 보존, 숨김 데이터 보존·고지, 미계산 수식은 원문 보존. 차트·이미지 내 텍스트는 범위 밖. |
 | **docx_local** | `parsers/docx_local_parse.py` | `_docxlocal.md` | 없음 (로컬, 무료) | DOCX 전용, 오프라인, 비-LLM. 본문 순서 보존 추출 + document.xml 전수 recall 대조. 텍스트박스·각주 등 유실 위험 구조는 즉시 거부(승격). 이미지 내 텍스트는 범위 밖. |
 | **upstage** | `parsers/upstage_parse.py` | `_upstage.md` | `UPSTAGE_API_KEY` | 베이스라인. 노이즈 필터링·완전성 최강, 메타데이터 우수. |
@@ -110,7 +110,7 @@ python parsers/docx_local_parse.py input.docx     # 로컬, 무료, DOCX 전용
 python parsers/opendataloader_parse.py input.pdf  # 로컬, 무료, Java 필요
 ```
 
-경로 없이 실행하면 현재 디렉터리에서 지원 파일을 자동 탐지합니다(`cohere`·`openai`·`gvision`은 경로 필수). 출력은 입력 옆에 `<name>_<service>.md` 형식으로 기록됩니다(예: `input_upstage.md`). 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이며, 오류·빈 결과·검증 실패·부분 결과는 출력 없이 1로 끝나고 실행 시작 시 같은 이름의 이전 출력을 지웁니다. 보조 스크립트는 `scripts/` 아래에 있습니다(`assess_document.py`, `compare_outputs.py`, `normalize_odl.py`, ODT 대조용 `odt_verify.py`·`make_odt_fixtures.py` 등).
+경로 없이 실행하면 현재 디렉터리에서 지원 파일을 자동 탐지합니다(`cohere`·`openai`·`gvision`은 경로 필수). 출력은 입력 옆에 `<name>_<service>.md` 형식으로 기록됩니다(예: `input_upstage.md`). 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이며(`--help`는 사용법만 내고 0), 오류·빈 결과·검증 실패·부분 결과는 출력 없이 1로 끝나고 실행 시작 시 같은 이름의 이전 출력을 지웁니다. 보조 스크립트는 `scripts/` 아래에 있습니다(`assess_document.py`, `compare_outputs.py`, `normalize_odl.py`, ODT 대조용 `odt_verify.py`·`make_odt_fixtures.py` 등).
 
 ## 이식성 (코딩 에이전트 호환)
 

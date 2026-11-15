@@ -1,6 +1,13 @@
 """Gemini 문서 파서 (docparse).
 
-  python gemini_parse.py "<파일.pdf|.jpg|.png>" [--thinking]   → <파일>_gemini.md
+  python gemini_parse.py "<파일.pdf|.jpg|.png>" [--thinking] [--model gemini-4-hydrogen]
+      [--media-resolution low|medium|high|ultra_high]   → <파일>_gemini.md
+
+모델: 기본 `gemini-4-hydrogen`(2026-11-16 확인. 3.8 Flash의 공식 후속). 종전 기본값이던
+별칭 `gemini-flash-latest`는 폐지돼 404를 낸다. 최난도 판독은 `--model gemini-4-carbon`.
+`--media-resolution`은 이미지·PDF에 배정하는 시각 토큰 수를 정한다(이미지 기본 1,120,
+ultra_high 2,240. ultra_high는 이미지 입력에만 쓸 수 있다). 작은 글자·수치표 이미지는
+ultra_high로 올린다.
 
 실패 계약(2026-08-31): 응답 text가 None이거나 finish_reason이 MAX_TOKENS(출력이
 잘림)면 출력 파일을 만들지 않고 종료 코드 1. 종전에는 잘린 결과를 경고만 찍고
@@ -12,8 +19,15 @@ import sys
 import traceback
 
 
+DEFAULT_MODEL = "gemini-4-hydrogen"
+RESOLUTIONS = ("low", "medium", "high", "ultra_high")
+
+
 def main():
     """반환값이 종료 코드다(0 성공 / 1 실패)."""
+    if any(a in ("--help", "-h") for a in sys.argv[1:]):
+        print(__doc__)
+        return 0
     try:
         from google import genai
         from google.genai import types
@@ -41,9 +55,36 @@ def main():
         '.png': 'image/png'
     }
 
-    # 명령줄 인수 파싱 (--thinking 옵션 분리)
-    use_thinking = "--thinking" in sys.argv
-    args = [a for a in sys.argv[1:] if a != "--thinking"]
+    # 명령줄 인수 파싱 (--thinking, --model, --media-resolution 분리)
+    use_thinking = False
+    model = DEFAULT_MODEL
+    resolution = None
+    args = []
+    argv = sys.argv[1:]
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--thinking":
+            use_thinking = True
+        elif a in ("--model", "--media-resolution"):
+            if i + 1 >= len(argv) or argv[i + 1].startswith("--") or os.path.exists(argv[i + 1]):
+                # 값을 빠뜨리면 뒤의 파일 경로가 값으로 먹힌다. 있는 파일 경로는 값으로 받지 않는다.
+                print(f"오류: {a} 값이 없습니다.")
+                return 1
+            if a == "--model":
+                model = argv[i + 1]
+            else:
+                resolution = argv[i + 1]
+            i += 1
+        elif a.startswith("--"):
+            print(f"오류: 알 수 없는 옵션: {a}")
+            return 1
+        else:
+            args.append(a)
+        i += 1
+    if resolution is not None and resolution not in RESOLUTIONS:
+        print(f"오류: --media-resolution은 {'|'.join(RESOLUTIONS)} 중 하나여야 합니다: {resolution}")
+        return 1
 
     def get_output_filename(input_file):
         """입력 파일 경로를 기반으로 출력 파일 경로 생성"""
@@ -65,6 +106,10 @@ def main():
         mime_type = MIME_TYPES[ext]
 
         print(f"입력 파일: {input_file} ({mime_type})")
+        if resolution == "ultra_high" and mime_type == "application/pdf":
+            # 이전 출력을 지우기 전에 걸러 낸다(잘못된 옵션 조합으로 기존 결과를 잃지 않게)
+            print("오류: ultra_high는 이미지 입력에만 쓸 수 있습니다. PDF는 쪽을 이미지로 렌더해 넣거나 high를 쓰세요.")
+            return False
         output_file = get_output_filename(input_file)
         clear_stale_output(output_file)
 
@@ -100,9 +145,8 @@ def main():
 
         print("변환 중...")
 
-        # gemini-flash-latest는 서버측 최상위 stable flash 별칭이라 세대가 자동으로 따라온다
-        # (2026-06-28 확인 시 gemini-3.5-flash, 2026-08-26 확인 시 gemini-3.7-flash). 전부 thinking 모델.
-        # 기본은 thinking 최소화(thinking_level="low". 3.8-flash는 minimal 미지원, thinking_budget은 새 모델에서 400).
+        # 모델은 고정 ID를 쓴다(별칭 gemini-flash-latest는 2026-11 폐지돼 404). 전부 thinking 모델.
+        # 기본은 thinking 최소화(thinking_level="low". Gemini 4는 minimal을 거부한다).
         # thinking을 켜면 장문(≳20p)에서 전사 대신 "요약"으로 빠져
         # 본문 대부분을 조용히 버리고 완결된 문서처럼 위장하는 부작용이 있다(187p 실측). max_output_tokens도
         # 상향해 truncation을 줄인다. --thinking 옵션으로 켜면 수기 체크박스·한글이름 판독 정밀도가
@@ -111,11 +155,20 @@ def main():
         if not use_thinking:
             gen_config.thinking_config = types.ThinkingConfig(thinking_level="low")
 
+        if resolution:
+            level = getattr(types.PartMediaResolutionLevel, f"MEDIA_RESOLUTION_{resolution.upper()}")
+            media_part = types.Part(
+                inline_data=types.Blob(data=file_data, mime_type=mime_type),
+                media_resolution=types.PartMediaResolution(level=level),
+            )
+        else:
+            media_part = types.Part.from_bytes(data=file_data, mime_type=mime_type)
+
         def _call():
             return client.models.generate_content(
-                model="gemini-flash-latest",
+                model=model,
                 contents=[
-                    types.Part.from_bytes(data=file_data, mime_type=mime_type),
+                    media_part,
                     prompt
                 ],
                 config=gen_config,
@@ -148,7 +201,7 @@ def main():
         print(f"출력 파일: {output_file}")
         return True
 
-    print(f"인수: {sys.argv} (thinking={'ON' if use_thinking else 'OFF'})")
+    print(f"인수: {sys.argv} (model={model}, thinking={'ON' if use_thinking else 'OFF'}, media_resolution={resolution or '기본'})")
 
     if len(args) > 0:
         input_file = args[0]
@@ -202,6 +255,11 @@ def main():
 
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):  # Windows cp949 콘솔에서도 한글 출력이 깨지지 않게
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     exit_code = 1
     try:
         exit_code = main()

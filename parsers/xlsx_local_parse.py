@@ -40,13 +40,6 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from datetime import date, datetime, time, timedelta
 
-# Windows cp949 안전 (다른 파서와 동일 패턴: 양쪽 스트림 + replace)
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-
 SUPPORTED_EXTENSIONS = [".xlsx"]
 MAX_PROBLEM_SAMPLES = 10
 NS_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
@@ -488,6 +481,15 @@ def main():
 
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):
+        # Windows 한국어 콘솔(cp949)에서 출력이 깨지거나 예외가 나지 않게 한다. 실행할 때만 바꾼다.
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if __doc__ and any(_arg in ("--help", "-h") for _arg in sys.argv[1:]):
+        print(__doc__.strip())
+        sys.exit(0)
     exit_code = 1
     try:
         exit_code = main()

@@ -137,6 +137,11 @@ def recommend(primary: dict, secondaries: list[dict], gaps: list[dict]) -> tuple
 
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):  # Windows cp949 콘솔에서도 한글 출력이 깨지지 않게
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     if len(sys.argv) < 2:
         print("Usage: python compare_outputs.py <primary.md> [secondary.md ...]", file=sys.stderr)
         sys.exit(1)

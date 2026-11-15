@@ -2,6 +2,26 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 정리합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다.
 
+## 2026-11-16
+
+### 추가 (1.11.0: 이미지 수치표 다중 판독 대조)
+- `scripts/image_tables.py`: PDF에 이미지로 박힌 표의 격자를 쪽마다 세고 판독용 조각(표 전체·머리글·머리글 붙인 행 띠)과 `manifest.json`을 만든다. 원본 해상도 렌더 뒤 Lanczos 확대만 쓰며 값은 읽지 않는다. 쪽별 격자 수는 파서가 통째로 빠뜨린 표를 찾는 기준이다.
+- `scripts/cell_vote.py`: 독립 판독 2벌 이상을 칸 단위로 대조한다. 표기 정규화(대분수·대시·쉼표 소수), 행·열 재정렬, 분류(계열을 넘는 전원 일치·과반만 확정, 그 밖은 재확인), 숫자 혼동 쌍 표시, 재확인 목록(JSON·CSV). 확정 칸만 `consensus`에 값이 있고, 어느 판독에든 있는 행·열은 합의 격자나 재확인 목록에 드러난다.
+- `scripts/md_to_reading.py`: 표 조각의 파서 출력(마크다운·HTML 표)을 칸별 대조용 판독 JSON으로 바꾼다. 같은 격자의 파일이 여러 개면 실패하므로 `--suffix`로 한 파서만 고른다.
+- `references/image-tables.md`와 tier-rules 「이미지로 박힌 수치표」 절: 조각 만들기 → 계열이 다른 판독 4벌 이상 → 칸별 대조 → 갈린 칸만 재확인. 서브에이전트 판독 지시문 틀, 금지 사항, 실측 수치.
+- `assess_document.py`: 표본 쪽의 이미지 덮임과 유효 DPI를 재서 `signals.image_pages`·`low_dpi_image_pages`·`image_dpi_median`을 내고, 글자층이 있어도 표본의 30% 이상이 이미지 쪽이면 표·본문이 이미지인 문서로, 그 아래면 일부 쪽의 큰 이미지로 `rule_hints`에 알린다(저해상도면 원본 요청 안내).
+- `llamaparse_parse.py`: `--pages`(일부 쪽만. 출력은 `_llamaparse_p4_25-27.md`로 따로 써서 전체 문서 출력을 덮어쓰지 않는다), `--items`(항목 좌표·쪽별 신뢰도를 `_llamaparse_items.json`으로 저장하고 낮은 쪽 출력), `--confidence-high`(정밀 신뢰도 채점).
+- `gemini_parse.py`: `--model`, `--media-resolution low|medium|high|ultra_high`.
+- 모든 파서와 `assess_document.py`가 `--help`·`-h`에 사용법을 내고 종료 코드 0으로 끝난다. 회귀 시험 `tests/test_cli_bootstrap.py`.
+
+### 변경
+- `pdfplumber_parse.py`(Tier 0): 병합 칸이 있는 괘선 표를 `rowspan`·`colspan` HTML 표로 내고, 쪽 여백의 장식 무늬 때문에 격자가 깨지면 2차원 무늬를 이루는 작은 채움 도형(선 없이 채움만, 가로·세로 3~15pt, 좌우와 위아래에 같은 크기의 이웃이 있는 것)만 빼고 한 번 더 시도한다. 한 방향으로만 이어진 도형은 점선 칸막이일 수 있어 빼지 않고, 뺀 무늬가 주로 표 안에 있거나 뺀 도형이 한 칸 안의 낱말 사이에 놓였으면 그 재시도는 쓰지 않는다. 90° 회전 쪽은 회전을 푼 사본으로 교차 대조한다. 낱말 상자가 행 경계선에 닿아 두 엔진의 위아래 칸 배정만 갈린 자리는 실패가 아니라 출력 맨 위 주석으로 알린다. 낱말을 끊는 자리만 다른 칸은 같은 내용으로 본다(글자 순서가 바뀐 값은 불일치).
+- LlamaParse `agentic_plus` 크레딧 표기를 쪽당 45에서 25로 바로잡았다.
+- 파서·스크립트 전부가 진입부에서 stdout·stderr를 utf-8로 고정한다(Windows cp949 콘솔).
+
+### 수정
+- `gemini_parse.py`·`generate_alt_text.py`: 폐지된 별칭 `gemini-flash-latest`(404)를 기본값에서 걷어내고 `gemini-4-hydrogen`으로 고정했다.
+
 ## 2026-11-15
 
 ### 추가 (1.10.0: HWPX 밑줄·빈칸 보존)

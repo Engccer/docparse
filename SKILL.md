@@ -7,7 +7,7 @@ description: >
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
 metadata:
-  version: "1.10.0"
+  version: "1.11.0"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
@@ -35,10 +35,10 @@ metadata:
 | `hwpx_local_parse.py` | `_hwpxlocal.md` | 없음 (로컬) | **HWPX 전용·무료·오프라인**. hwpx-tomd 패키지 엔진(글상자·tail·표 병합 보존, 자가검증 3종). `pip install hwpx-tomd` 필요. 단어/글자 recall 미달·마커 누락 경고면 출력 미작성(승격), 이미지 내 텍스트는 범위 밖(경고 후 출력 유지). HWP는 hwp2hwpx 변환 후 입력. 밑줄 빈칸이 있으면 밑줄 보존을 자동으로 켜 밑줄은 `<u>…</u>`, 빈칸은 `\_`(hwpx-tomd 0.5.0+, 장식 밑줄만이면 `--underline`으로 수동) |
 | `xlsx_local_parse.py` | `_xlsxlocal.md` | 없음 (로컬) | **XLSX 전용·무료·오프라인·비-LLM**. 셀 값·병합 범위·숨김 상태가 파일에 명시된 포맷이라 파싱=읽기. openpyxl 추출 전체를 원시 XML 자체 해석과 값 멀티셋 교차 검증, 불일치·도형 텍스트박스 존재 시 출력 미작성. 병합은 앵커+범위 명시, 숨김 데이터 보존·고지, 미계산 수식은 원문 보존, 셀 주석은 개수 고지. 차트·이미지 내 텍스트는 범위 밖(경고) |
 | `docx_local_parse.py` | `_docxlocal.md` | 없음 (로컬) | **DOCX 전용·무료·오프라인·비-LLM**. 본문 블록(헤딩·단락·표)을 문서 순서대로 추출, document.xml 전수 recall 토큰 대조 내장. 텍스트박스·필드·각주 등 python-docx 사각지대는 누락으로 드러나 즉시 거부(조용한 유실 차단). 수식(OMML)·심볼 글리프·중첩 표도 거부, 이미지 내 텍스트는 범위 밖(머리글 포함 집계·경고) |
-| `pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬) | **괘선 표 PDF 전용(Tier 0)·무료·오프라인·비-LLM**. 격자 추출 + 좌표 재배치 양방향 자가검증(열 배정 오류·값 소실 검출) + PyMuPDF find_tables 교차 대조(서로 다른 PDF 추출 구현, 표 탐지 알고리즘 일부 공통 계보). PyMuPDF 필수, 없으면 출력 미작성. 빈 셀 보존, 환각·무단교정 구조적으로 없음. 스캔(출력 0)·괘선 없는 표·병합 셀은 범위 밖 |
+| `pdfplumber_parse.py` | `_pdfplumber.md` | 없음 (로컬) | **괘선 표 PDF 전용(Tier 0)·무료·오프라인·비-LLM**. 격자 추출 + 좌표 재배치 양방향 자가검증(열 배정 오류·값 소실 검출) + PyMuPDF find_tables 교차 대조(서로 다른 PDF 추출 구현, 표 탐지 알고리즘 일부 공통 계보). PyMuPDF 필수, 없으면 출력 미작성. 빈 셀 보존, 환각·무단교정 구조적으로 없음. 병합 칸은 범위를 복원할 수 있으면 `rowspan`·`colspan` HTML 표로 낸다. 스캔(출력 0)·괘선 없는 표·복원되지 않는 병합은 범위 밖 |
 | `upstage_parse.py` | `_upstage.md` | UPSTAGE_API_KEY | 노이즈 필터링 최강, 완전성 최고. header/footer/page_number로 제거한 텍스트는 표준 출력에 표본을 남긴다 |
-| `gemini_parse.py` | `_gemini.md` | GEMINI_API_KEY | `gemini-flash-latest`(서버 별칭, thinking 모델. 세대는 check-stack-updates가 감시). 텍스트 품질·체크박스·한글이름 최상이나 **장문에서 요약화 위험**. 기본 `thinking_level="low"`(요약화 방지·충실 전사), `--thinking`으로 켜면 체크박스·정밀 판독↑(소형 보조용). 출력이 토큰 한도에서 잘리면 저장하지 않는다. small(≤15p)만 Primary |
-| `llamaparse_parse.py` | `_llamaparse.md` | LLAMAPARSE_API_KEY | **v2 agentic 기본**. 표 열 정확도·OCR 우수. 10크레딧/p |
+| `gemini_parse.py` | `_gemini.md` | GEMINI_API_KEY | 기본 `gemini-4-hydrogen`(thinking 모델. `--model`로 교체, 최난도 판독은 `gemini-4-carbon`. 세대는 check-stack-updates가 감시). `--media-resolution ultra_high`로 작은 글자·수치표 이미지의 시각 토큰을 올린다(이미지 입력만). 텍스트 품질·체크박스·한글이름 최상이나 **장문에서 요약화 위험**. 기본 `thinking_level="low"`(요약화 방지·충실 전사), `--thinking`으로 켜면 체크박스·정밀 판독↑(소형 보조용). 출력이 토큰 한도에서 잘리면 저장하지 않는다. small(≤15p)만 Primary |
+| `llamaparse_parse.py` | `_llamaparse.md` | LLAMAPARSE_API_KEY | **v2 agentic 기본**. 표 열 정확도·OCR 우수. 10크레딧/p(agentic_plus 25). `--pages 4,25-27`로 일부 쪽만(출력은 `_llamaparse_p4_25-27.md`), `--items`로 항목 좌표·쪽별 신뢰도를 `_llamaparse_items.json`(쪽 지정 시 `_llamaparse_p4_25-27_items.json`)에 함께 저장(`--confidence-high`는 정밀 채점). **쪽 신뢰도는 수치 정확성의 근거가 아니다**(오독 11칸인 쪽에 1.00). 이미지 수치표에서는 agentic_plus가 agentic보다 낫지 않았다 |
 | `mistral_parse.py` | `_mistral.md` | MISTRAL_API_KEY | `mistral-ocr-latest`(현재 ocr-4 세대). 대용량 완전성 + **헤딩 구조 생성(ocr-4 신규)**, 교차 검증용. 노이즈·OCR 글자 드리프트·수기 과잉교정 잔존 |
 | `opendataloader_parse.py` | `_opendataloader.md` | 없음 (로컬) | Java 필요, PDF 전용, 텍스트 레이어 필수 |
 | `corepin_parse.py` | `_corepin.md` | COREPIN_API_KEY | AI3 OSS 엔진 라우터(텍스트PDF→opendataloader, HWP/HWPX→kordoc, Office→markitdown, **스캔→AI3 자체 OCR**) + 한국어 필터 SLM. 18종 단일 API, 장당 2원. **스캔 양식에서 표 구조 소실 검증됨** → Primary 부적합, 보조/비교용 |
@@ -51,7 +51,10 @@ metadata:
 | 스크립트 | 용도 |
 |---------|------|
 | `check_env.py` | 파서별 의존 패키지·API 키 준비 상태 + 키 발급 URL 점검 (첫 실행 시·읽기 전용) |
-| `assess_document.py` | 문서 사전 진단 (페이지 수·텍스트 레이어·티어·파서 추천 JSON + `signals`(PUA 밀도·라틴 비율·표본 쪽) + `rule_hints`(진단만으로 걸린 tier-rules 절)) |
+| `assess_document.py` | 문서 사전 진단 (페이지 수·텍스트 레이어·티어·파서 추천 JSON + `signals`(PUA 밀도·라틴 비율·표본 쪽·이미지 쪽 수와 유효 DPI) + `rule_hints`(진단만으로 걸린 tier-rules 절)) |
+| `image_tables.py` | **이미지로 박힌 표**의 격자를 쪽마다 세고(파서의 표 누락 대조용) 판독용 조각(표 전체·머리글·머리글 붙인 행 띠)과 `manifest.json`을 만든다. 원본 해상도 렌더 뒤 Lanczos 확대만 쓴다. 값은 읽지 않는다 |
+| `md_to_reading.py` | 표 조각을 파서에 넣어 나온 `pNNN.gXX.*_<파서>.md`에서 가장 큰 표를 골라 머리글·본문을 가르고 칸별 대조용 판독 JSON으로 묶는다(한 폴더에 여러 파서 출력이 있으면 `--suffix` 필수) |
+| `cell_vote.py` | 독립 판독 2벌 이상을 **칸 단위로 대조**: 표기 정규화, 행·열 재정렬, 분류(계열을 넘는 전원 일치·과반만 확정. 한 계열만의 일치·동률·한 판독뿐인 칸·`?` 칸은 재확인), 숫자 혼동 쌍 표시, 재확인 대상 목록(JSON·CSV). `consensus`에 값이 있는 칸만 확정이다. 일치는 정답 보증이 아니다 |
 | `compare_outputs.py` | 파서 출력 비교 (heading 갭·표 수·실제 글자 수·퓨전 전략 + 근거) |
 | `normalize_odl.py` | ODL 출력 자동 정리 (페이지 구분자·이미지 표식 축약·h6 정규화·heading 승격·빈 줄 압축) |
 | `generate_alt_text.py` | 시각장애인 접근성 alt text 자동 생성 (PyMuPDF + Gemini Vision, 한국어 상세화). 실패·미매핑 placeholder는 원문 유지 + 종료 코드 1 |
@@ -69,6 +72,7 @@ metadata:
 |------|--------|
 | `tier-rules.md` | 스캔/수기/시험지/합본 PDF 등 티어 외 보정 규칙이 필요할 때. **각 절의 `*근거:*` 줄이 그 규칙의 확신도(n=문서 수)를 말한다** — `n=1`·`미표기` 규칙이 이번 문서와 어긋나면 규칙 쪽을 먼저 의심한다 |
 | `handwriting-cascade.md` | **손글씨 충실 전사 최고 방법**: Vision→Claude(Opus) 캐스케이드가 챔피언(정본 대조 ~98.2%). 모델 비교(단독: Opus>Sonnet +1.0%p / 캐스케이드: +0.3%p, Gemma·Haiku 탈락)·클린 repair 프롬프트·속도. 5-subset 정성 + 3반 토너먼트 CER/WER 정량 |
+| `image-tables.md` | **표가 이미지로 박힌 문서의 수치표**(진단 `image_pages` 신호·스캔 수치표): 격자 세기·조각 만들기 → 계열이 다른 판독 4벌 이상 → 칸별 대조 → 갈린 칸만 재확인. 서브에이전트 판독 지시문 틀과 실측 수치 포함 |
 | `hwpx.md` | HWPX·HWP 파일(`format`이 `hwpx`·`hwp`)일 때: 보강·하이브리드·Upstage 교차 조건·엔진 결함 처리·HWP 변환 |
 | `handwriting-ocr-engines.md` | 손글씨 위주 스캔 문서 충실 전사용 OCR 엔진 선택(Vision·Azure·CLOVA·TrOCR·Tesseract 등 비교·언어·PII·비용) |
 | `postprocess.md` | LlamaParse v2 후처리 정규식·ODL 자동 정리·Step 7 최종 노이즈 정리 |
@@ -115,7 +119,7 @@ python "<스킬루트>/scripts/assess_document.py" "<파일경로>"
 
 JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 티어별 파서 전략 결정. `table_hint: true`는 벡터 괘선 격자가 감지됐다는 뜻으로, 텍스트 레이어가 있으면 `recommended_parsers` 선두에 `pdfplumber`가 온다(Step 2 Tier 0). **텍스트 레이어가 없으면(스캔본) `tier`는 쪽수 티어보다 한 단계 위다**(12쪽 스캔본 → medium). `recommended_parsers`는 Step 2 기본 티어 표에 세 가지 보정을 더한 값이다: 스캔본은 ODL을 빼고 Upstage·Mistral(진단 티어 large 이상 = 16쪽 이상)을 더한다, `--lang`이 ko가 아니면 Mistral을 더한다, docx·xlsx는 로컬 파서 뒤에 승격 후보(upstage·llamaparse)를 붙인다. hwp·pptx·이미지는 표 밖 포맷이라 Upstage 계열을 추천한다(HWP는 `references/hwpx.md`대로 변환 후 진입). 표나 보정이 바뀌면 스크립트도 바꾼다.
 
-`signals`는 결정론적으로 잴 수 있는 것만 담는다: `text_pages`(표본 쪽 중 텍스트가 있는 쪽 수. 표본은 앞 3쪽 + 문서 전체 분산 최대 12쪽), `pua_per_10k`(텍스트 레이어 1만 자당 PUA 코드포인트. ≥100이면 수식 시험지 규칙), `underline_runs`·`underline_blanks`(HWPX만: 밑줄 run 수와 그중 공백뿐인 run 수(기입용 빈칸 근사). 빈칸 후보가 있으면 자동 켜기 안내, 장식 밑줄만이면 `--underline` 힌트), `latin_ratio`(문자 중 라틴 비율. ≥0.5면 Mistral Primary 고려 조건). `rule_hints`는 **진단만으로 걸린** tier-rules 절 이름(또는 그 절의 요지 한 줄)이며, 비어 있다는 것은 "해당 없음"이 아니라 "진단으로는 판정할 수 없는 절이 남아 있다"는 뜻이다. 손글씨·합본·병합셀·인구통계 교차표는 Step 2 보정 규칙 목록에서 에이전트가 직접 판정한다.
+`signals`는 결정론적으로 잴 수 있는 것만 담는다: `text_pages`(표본 쪽 중 텍스트가 있는 쪽 수. 표본은 앞 3쪽 + 문서 전체 분산 최대 12쪽), `pua_per_10k`(텍스트 레이어 1만 자당 PUA 코드포인트. ≥100이면 수식 시험지 규칙), `underline_runs`·`underline_blanks`(HWPX만: 밑줄 run 수와 그중 공백뿐인 run 수(기입용 빈칸 근사). 빈칸 후보가 있으면 자동 켜기 안내, 장식 밑줄만이면 `--underline` 힌트), `latin_ratio`(문자 중 라틴 비율. ≥0.5면 Mistral Primary 고려 조건), `image_pages`·`low_dpi_image_pages`·`image_dpi_median`(표본 쪽 중 큰 이미지가 쪽의 30% 이상을 덮는 쪽 수, 그중 유효 150DPI 미만 쪽 수, 유효 DPI 중앙값. **글자층이 있어도 표가 그림이면 `has_text_layer: true`·`table_hint: false`로 나오므로 이 신호가 유일한 단서다**). `rule_hints`는 **진단만으로 걸린** tier-rules 절 이름(또는 그 절의 요지 한 줄)이며, 비어 있다는 것은 "해당 없음"이 아니라 "진단으로는 판정할 수 없는 절이 남아 있다"는 뜻이다. 손글씨·합본·병합셀·인구통계 교차표는 Step 2 보정 규칙 목록에서 에이전트가 직접 판정한다.
 
 ### Step 2: 적응형 파서 선택
 
@@ -150,7 +154,7 @@ small~xlarge의 쪽수는 텍스트 레이어가 있는 PDF 기준이다. 스캔
 
 **Primary 선택 원칙**: 자동화로 교정 불가능한 결함이 적은 파서를 Primary로. LlamaParse v2가 medium~xlarge 최적 (목차 정리, 표 열 정확, 노이즈 0건, LaTeX 0건). 크레딧 부족 시 ODL Primary + Upstage 교차검증으로 폴백(텍스트 레이어가 있을 때. 스캔본은 tier-rules 「텍스트 레이어 없음」). **Mistral ocr-4는 헤딩 구조를 생성해 텍스트PDF 폴백 Primary 후보**이나, 노이즈·OCR 글자 드리프트 후처리가 전제다(tier-rules 「Mistral ocr-4 헤딩 생성」).
 
-**small 티어 Gemini 주의** (Gemini 규칙의 정본. 다른 문서의 Gemini 서술은 이 절을 따른다): `gemini-flash-latest`는 thinking 모델을 가리키는 서버 별칭이다(세대는 check-stack-updates가 감시). thinking이 켜지면 **장문(≳20p)에서 전사 대신 요약으로 빠져** 본문을 조용히 버리고 완결 문서처럼 위장한다(근거는 gotchas.md). `gemini_parse.py`는 이를 막기 위해 **기본 `thinking_level="low"` + `max_output_tokens=65536`**으로 충실 전사한다. **Gemini를 장문 Primary로 쓰지 말 것**(small ≤15p만). 단 thinking을 최소화하면 수기 자필 체크박스 판독이 약해지므로, 체크박스·한글이름 등 정밀 판독이 필요한 **보조 패치**에는 `gemini_parse.py <파일> --thinking`으로 켜서 별도 호출한다.
+**small 티어 Gemini 주의** (Gemini 규칙의 정본. 다른 문서의 Gemini 서술은 이 절을 따른다): 기본 모델 `gemini-4-hydrogen`은 thinking 모델이다(세대는 check-stack-updates가 감시. 종전 별칭 `gemini-flash-latest`는 폐지됐다). thinking이 켜지면 **장문(≳20p)에서 전사 대신 요약으로 빠져** 본문을 조용히 버리고 완결 문서처럼 위장한다(근거는 gotchas.md). `gemini_parse.py`는 이를 막기 위해 **기본 `thinking_level="low"` + `max_output_tokens=65536`**으로 충실 전사한다. **Gemini를 장문 Primary로 쓰지 말 것**(small ≤15p만). 단 thinking을 최소화하면 수기 자필 체크박스 판독이 약해지므로, 체크박스·한글이름 등 정밀 판독이 필요한 **보조 패치**에는 `gemini_parse.py <파일> --thinking`으로 켜서 별도 호출한다.
 
 #### 보정 규칙 (티어 결정 후 적용)
 
@@ -159,6 +163,7 @@ small~xlarge의 쪽수는 텍스트 레이어가 있는 PDF 기준이다. 스캔
 - ◇ 괘선 정형 표 PDF + 목표 산출물이 표 데이터 (Tier 0: pdfplumber 결정론 우선)
 - XLSX·DOCX (Office 로컬 결정론 파서) — 기본 티어 표의 해당 행
 - ◇ 텍스트 레이어 없음 (스캔/이미지 PDF: 진단이 쪽수 티어를 한 단계 올린다). ◇ 부분 스캔 의심(표본 일부만 텍스트)
+- ◇ 이미지로 박힌 수치표 (글자층은 있는데 표가 그림. 저해상도면 먼저 고지: 절차는 `references/image-tables.md`)
 - ◇ 영어 비율 ≥50% / 정형화 양식 (Mistral Primary 고려 조건) + Mistral ocr-4 헤딩 생성(폴백 Primary)
 - Mistral 추가 조건 (Primary↔보조 불일치·비한국어·스캔 16쪽 이상) + ◇ 비한국어 문서 조건 정밀화(`--lang`≠ko)
 - 크레딧 부족 시 폴백 (ODL Primary + Upstage)
@@ -270,6 +275,7 @@ Primary 선정 직후, LLM 교차 검증 전에 반드시 실행. **표에 숫�
 2. **불일치 발견 시**: 보조 파서에서 해당 표 숫자를 추출하여 셀 단위 대조. 포맷이 지저분해도 숫자 값 자체는 추출 가능("포맷 품질 ≠ 데이터 정확도").
 3. **셀 위치 비교 (가장 중요, 생략 불가)**: 산술 검증과 무관하게 **항상** 수행. 합계가 맞아도 카테고리가 뒤바뀔 수 있음. 2파서 일치 시 채택, 불일치 시 3번째 파서로 다수결. **스캔 수기 양식의 표 숫자에서는 Gemini·LlamaParse v2를 투표에서 제외**하고 Upstage·Mistral만 쓴다(열 이동 기록, tier-rules 「스캔 문서 + 표에 숫자 데이터」). 그 둘이 갈리면 세 번째 표는 해당 쪽 시각 판독이다.
 4. **불일치 해소 불가 시**: 3자 교차 검증용 추가 파서 실행 (Mistral. 이미 투표에 들었으면 시각 판독).
+5. **표가 이미지인 문서**: 위 1~4를 파서 출력끼리 눈으로 견주지 않고 `references/image-tables.md` 절차(표 조각 → 계열이 다른 판독 4벌 이상 → `cell_vote.py`)로 한다. 쪽별 격자 수(`image_tables.py`)를 파서의 표 수와 견주어 통째로 빠진 표부터 찾는다.
 
 ⚠️ **산술 검증만으로는 열 이동을 탐지할 수 없다.** Step 5.3 셀 위치 비교가 유일한 방어선.
 

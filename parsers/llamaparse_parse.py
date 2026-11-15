@@ -1,16 +1,70 @@
 """LlamaParse v2 파서 (docparse).
 
-  python llamaparse_parse.py [--tier T] [--lang L] [--instructions FILE] [--credits] "<파일>"
-  → <파일>_llamaparse.md
+  python llamaparse_parse.py [--tier T] [--lang L] [--instructions FILE] [--pages 4,25-27]
+      [--items] [--confidence-high] [--credits] "<파일>"
+  → <파일>_llamaparse.md (+ --items면 <파일>_llamaparse_items.json)
+  → --pages를 주면 <파일>_llamaparse_p4_25-27.md (전체 문서 출력을 덮어쓰지 않는다)
+
+--pages: 처리할 쪽만 지정한다(1부터, 예: 4,25-27, 겹치는 쪽 없이). 일부 쪽만 다시 돌릴 때
+  크레딧을 아낀다. 출력 이름에 쪽 범위가 붙는다.
+--items: 항목별 구조·좌표와 쪽별 신뢰도(metadata)를 JSON으로 함께 저장하고, 신뢰도가 낮은
+  쪽을 출력한다. 본문만 저장하면 나중에 같은 문서를 다시 받아야 한다.
+--confidence-high: 신뢰도 채점을 정밀 모드로 돌린다(쪽당 크레딧 추가). --items를 함께 켠다.
+  신뢰도는 쪽 단위 참고 신호이지 칸 단위 정답 보증이 아니다.
+--instructions: 지시를 넣으면 전용 문서 모델 대신 범용 모델 경로로 처리될 수 있다
+  (2026-11 공식 문서 기준). 표 전사 품질이 목적이면 지시 없이 먼저 돌린다.
 
 실패 계약(2026-08-31): 응답에 markdown_full·text_full이 모두 비면 출력 파일을 만들지
 않고 종료 코드 1(종전에는 "(내용 없음)" 7글자 파일이 완료본으로 남았다). 실행 시작
-시 같은 이름의 이전 출력을 지운다.
+시 같은 이름의 이전 출력을 지운다. 짝이 되는 _items.json도 함께 지운다(이전 실행의 항목·신뢰도가
+새 본문의 것으로 오인되지 않게).
 """
 import os
 import sys
 import traceback
 import argparse
+import json
+import re
+
+CREDITS_PER_PAGE = {'fast': 1, 'cost_effective': 3, 'agentic': 10, 'agentic_plus': 25}
+PAGES_RE = re.compile(r"\d+(-\d+)?(,\d+(-\d+)?)*")
+
+
+def count_target_pages(spec):
+    """'4,25-27' → 4. 잘못된 범위(끝 < 시작, 0쪽)와 겹치는 쪽은 ValueError."""
+    spans = []
+    for part in spec.split(","):
+        a, _, b = part.partition("-")
+        lo, hi = int(a), int(b or a)
+        if lo < 1 or hi < lo:
+            raise ValueError(part)
+        if any(lo <= h and l <= hi for l, h in spans):
+            raise ValueError(f"{part} (겹치는 쪽)")
+        spans.append((lo, hi))
+    return sum(hi - lo + 1 for lo, hi in spans)
+
+
+def to_plain(obj):
+    """SDK 응답 객체를 JSON으로 쓸 수 있는 기본 자료형으로 바꾼다."""
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    if isinstance(obj, dict):
+        return {k: to_plain(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [to_plain(v) for v in obj]
+    if hasattr(obj, "__dict__"):
+        return {k: to_plain(v) for k, v in vars(obj).items()}
+    return obj
+
+
+def page_confidences(metadata):
+    """metadata(dict)에서 (쪽 번호, 신뢰도) 목록을 뽑는다. 없으면 빈 목록."""
+    pages = (metadata or {}).get("pages") if isinstance(metadata, dict) else None
+    out = []
+    for i, page in enumerate(pages or [], 1):
+        if isinstance(page, dict) and isinstance(page.get("confidence"), (int, float)):
+            out.append((page.get("page_number") or page.get("page") or i, page["confidence"]))
+    return out
 
 
 def main():
@@ -27,19 +81,31 @@ def main():
     parser = argparse.ArgumentParser(
         description="LlamaParse v2: 문서를 Markdown으로 변환합니다.",
         epilog="환경변수: LLAMAPARSE_API_KEY. 기본 옵션: 연속 표 병합, 링크 주석. "
-               "티어별 크레딧/페이지: fast(1), cost_effective(3), agentic(10), agentic_plus(45).",
+               "티어별 크레딧/페이지: fast(1), cost_effective(3), agentic(10), agentic_plus(25).",
         allow_abbrev=False,
     )
     parser.add_argument("files", nargs="*", help="입력 파일 (생략 시 현재 폴더에서 자동 탐색)")
     parser.add_argument("--tier", choices=TIERS, default="agentic", help="파싱 티어 (기본: agentic)")
     parser.add_argument("--lang", default="ko", help="OCR 언어 코드 (기본: ko)")
     parser.add_argument("--instructions", metavar="FILE", help="UTF-8 파싱 지시 파일 (agentic·agentic_plus에서 적용)")
+    parser.add_argument("--pages", metavar="RANGES", help="처리할 쪽(1부터). 예: 4,25-27")
+    parser.add_argument("--items", action="store_true", help="항목·쪽별 신뢰도를 <파일>_llamaparse_items.json으로 함께 저장")
+    parser.add_argument("--confidence-high", action="store_true", help="신뢰도 정밀 채점(쪽당 크레딧 추가, --items 포함)")
     parser.add_argument("--credits", action="store_true", help="남은 크레딧 및 갱신일 확인")
     args = parser.parse_intermixed_args()
     tier, language, check_credits = args.tier, args.lang, args.credits
     files_to_process = args.files
     if not language.strip():
         parser.error("--lang에는 비어 있지 않은 언어 코드를 지정해야 합니다")
+    target_page_count = None
+    if args.pages is not None:
+        if not PAGES_RE.fullmatch(args.pages):
+            parser.error("--pages는 4,25-27 같은 꼴이어야 합니다(1부터, 공백 없이)")
+        try:
+            target_page_count = count_target_pages(args.pages)
+        except ValueError as e:
+            parser.error(f"--pages 범위가 잘못됐습니다: {e}")
+    save_items = args.items or args.confidence_high
 
     # 명시한 입력 전체를 검사한 뒤에만 크레딧 조회·파싱을 시작한다.
     for input_file in files_to_process:
@@ -94,7 +160,8 @@ def main():
         """입력 파일 경로를 기반으로 출력 파일 경로 생성"""
         dir_path = os.path.dirname(input_file)
         base_name = os.path.splitext(os.path.basename(input_file))[0]
-        output_name = f"{base_name}_llamaparse.md"
+        pages = f"_p{args.pages.replace(',', '_')}" if args.pages else ""
+        output_name = f"{base_name}_llamaparse{pages}.md"
         if dir_path:
             return os.path.join(dir_path, output_name)
         return output_name
@@ -106,7 +173,7 @@ def main():
 
     def estimate_credits(input_file, tier):
         """파일 페이지 수 추정 및 크레딧 계산"""
-        credits_per_page = {'fast': 1, 'cost_effective': 3, 'agentic': 10, 'agentic_plus': 45}
+        credits_per_page = CREDITS_PER_PAGE
         try:
             import fitz
             doc = fitz.open(input_file)
@@ -114,6 +181,8 @@ def main():
             doc.close()
         except Exception:
             pages = None
+        if pages and target_page_count:
+            pages = min(pages, target_page_count)
         if pages:
             cost = pages * credits_per_page.get(tier, 10)
             return pages, cost
@@ -124,6 +193,8 @@ def main():
         print(f"입력 파일: {input_file}")
         output_file = get_output_filename(input_file)
         clear_stale_output(output_file)
+        items_file = output_file[:-3] + "_items.json"
+        clear_stale_output(items_file)
 
         # 파일 크기 확인
         file_size = os.path.getsize(input_file)
@@ -137,7 +208,7 @@ def main():
         # 크레딧 추정
         pages, cost = estimate_credits(input_file, tier)
         if pages:
-            print(f"페이지 수: {pages} / 예상 크레딧: {cost}")
+            print(f"페이지 수: {pages} / 예상 크레딧: {cost}" + (" (+정밀 신뢰도 채점분)" if args.confidence_high else ""))
 
         print("변환 중...")
 
@@ -164,6 +235,14 @@ def main():
                 parse_kwargs['agentic_options'] = {'custom_prompt': custom_prompt}
             else:
                 print(f"[경고] --instructions는 agentic/agentic_plus 티어에서만 적용됩니다. 현재 티어({tier})에서는 무시됩니다.")
+        expand = ["markdown_full", "text_full"]
+        if args.pages:
+            parse_kwargs['page_ranges'] = {'target_pages': args.pages}
+            print(f"대상 쪽: {args.pages}")
+        if save_items:
+            expand += ["items", "metadata"]
+        if args.confidence_high:
+            processing_options['confidence_score_effort'] = 'high'
 
         # 파일 업로드 및 파싱 (동기, 완료까지 폴링)
         with open(input_file, "rb") as f:
@@ -171,7 +250,7 @@ def main():
                 tier=tier,
                 version="latest",
                 upload_file=f,
-                expand=["markdown_full", "text_full"],
+                expand=expand,
                 verbose=True,
                 processing_options=processing_options,
                 output_options=output_options,
@@ -190,6 +269,19 @@ def main():
 
         print(f"변환 완료! {len(markdown_content)}글자가 저장되었습니다.")
         print(f"출력 파일: {output_file}")
+        if save_items:
+            extra = {"items": to_plain(getattr(result, "items", None)),
+                     "metadata": to_plain(getattr(result, "metadata", None))}
+            with open(items_file, "w", encoding="utf-8") as f:
+                json.dump(extra, f, ensure_ascii=False, indent=1)
+            print(f"항목·신뢰도 파일: {items_file}")
+            scores = sorted(page_confidences(extra["metadata"]), key=lambda x: x[1])
+            if scores:
+                low = ", ".join(f"{n}쪽 {c:.2f}" for n, c in scores[:5])
+                print(f"쪽별 신뢰도: {len(scores)}쪽 채점, 낮은 순 {low}")
+                print("  신뢰도는 쪽 단위 참고 신호다. 낮은 쪽부터 원본과 대조하되, 높다고 수치가 맞다는 뜻은 아니다.")
+            else:
+                print("쪽별 신뢰도: 응답에 없음")
         return True
 
     if check_credits:
@@ -251,6 +343,12 @@ def main():
 
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):
+        # Windows 한국어 콘솔(cp949)에서 출력이 깨지거나 예외가 나지 않게 한다. 실행할 때만 바꾼다.
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     exit_code = 1
     try:
         exit_code = main()

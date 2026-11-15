@@ -13,15 +13,6 @@ import shutil
 import tempfile
 import traceback
 
-# Windows 콘솔(cp949)에서 직접 호출되어도 print가 en-dash 등으로 깨지지 않도록
-# stdout/stderr를 UTF-8 + errors=replace 로 강제. PYTHONIOENCODING 미설정 환경
-# (writing_kb_convert.py 같은 외부 wrapper 없이 단독 호출) 대비.
-try:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
-    pass
-
 # 래퍼가 삽입한 쪽 주석은 본문이 아니다. 저장할 Markdown에서는 보존한다.
 _PAGE_COMMENT = re.compile(r"<!--\s*Page\s+\d+\s*-->")
 # 표 기호·구분선·공백을 뺀 "실제 글자"(gotchas.md의 빈 표 뼈대 함정 대응)
@@ -173,6 +164,15 @@ def main():
 
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):
+        # Windows 한국어 콘솔(cp949)에서 출력이 깨지거나 예외가 나지 않게 한다. 실행할 때만 바꾼다.
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if __doc__ and any(_arg in ("--help", "-h") for _arg in sys.argv[1:]):
+        print(__doc__.strip())
+        sys.exit(0)
     exit_code = 1
     try:
         exit_code = main()

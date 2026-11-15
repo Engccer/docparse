@@ -28,7 +28,11 @@ def parse(**kwargs):
     if os.environ.get("RESPONSE") == "error":
         raise RuntimeError("fixture API failure")
     body = "" if os.environ.get("RESPONSE") == "empty" else "# 한국어\n\n표와 숫자 12\n"
-    return SimpleNamespace(markdown_full=body, text_full="", status="COMPLETED")
+    extra = {}
+    if "items" in kwargs.get("expand", []):
+        extra = {"items": {"pages": [{"page_number": 4, "items": [{"type": "table", "rows": [["1/2", "90"]]}]}]},
+                 "metadata": {"pages": [{"page_number": 4, "confidence": 0.91}, {"page_number": 25, "confidence": 0.42}]}}
+    return SimpleNamespace(markdown_full=body, text_full="", status="COMPLETED", **extra)
 
 
 def ocr(**kwargs):
@@ -60,7 +64,36 @@ def get(url, **kwargs):
     return SimpleNamespace(json=lambda: body, raise_for_status=lambda: None)
 
 
+class _Types:
+    """google.genai.types 대역: 파서가 만드는 요청 모양만 받아 적는다."""
+    GenerateContentConfig = ThinkingConfig = Blob = PartMediaResolution = SimpleNamespace
+    PartMediaResolutionLevel = SimpleNamespace(**{f"MEDIA_RESOLUTION_{n}": n.lower()
+                                                  for n in ("LOW", "MEDIUM", "HIGH", "ULTRA_HIGH")})
+
+    class Part(SimpleNamespace):
+        @classmethod
+        def from_bytes(cls, data, mime_type):
+            return cls(inline_data=SimpleNamespace(data=data, mime_type=mime_type), media_resolution=None)
+
+
+def generate_content(model, contents, config):
+    part = contents[0]
+    thinking = getattr(config, "thinking_config", None)
+    record("gemini", model=model, mime_type=part.inline_data.mime_type,
+           media_resolution=part.media_resolution.level if part.media_resolution else None,
+           thinking_level=thinking.thinking_level if thinking else None)
+    return SimpleNamespace(text="| 칸 | 12 |\n", candidates=[SimpleNamespace(finish_reason="STOP")])
+
+
+def genai_client(**kwargs):
+    return SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+
+
 if os.environ.get("FAKE_SDK") == "1":
+    _genai = SimpleNamespace(Client=genai_client, types=_Types)
+    sys.modules["google"] = SimpleNamespace(genai=_genai)
+    sys.modules["google.genai"] = _genai
+    sys.modules["google.genai.types"] = _Types
     sys.modules["llama_cloud"] = SimpleNamespace(Client=client)
     sys.modules["mistralai"] = SimpleNamespace()
     sys.modules["mistralai.client"] = SimpleNamespace(Mistral=client)

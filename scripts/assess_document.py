@@ -17,7 +17,10 @@ Output (stdout, JSON):
             "sampled_pages": [1, 2, 3, 20, 40, ...],
             "text_pages": 12,            # 표본 중 50자 이상 텍스트가 있는 쪽 수
             "pua_per_10k": 3.1,          # 텍스트 레이어 1만 자당 PUA(U+E000~F8FF) 코드포인트
-            "latin_ratio": 0.12          # 문자(한글+라틴) 중 라틴 비율
+            "latin_ratio": 0.12,         # 문자(한글+라틴) 중 라틴 비율
+            "image_pages": 0,            # 표본 중 내장 이미지가 쪽 면적의 30% 이상인 쪽 수
+            "low_dpi_image_pages": 0,    # 그중 큰 이미지의 유효 해상도가 150DPI 미만인 쪽 수
+            "image_dpi_median": null     # 큰 이미지들의 유효 해상도 중앙값(없으면 null)
             # HWPX만: "underline_runs" 밑줄 글자 모양 run 수, "underline_blanks" 그중 공백뿐인 run 수(빈칸 근사)
         },
         "rule_hints": ["..."]            # references/tier-rules.md 절 이름. 진단으로 걸린 것만
@@ -32,11 +35,14 @@ Output (stdout, JSON):
 - table_hint 30%: 관행값. 표본 근거 없음(격자 검출 자체는 합성 PDF 양성 3·음성 4로 검증, CHANGELOG 3.19).
 - pua_per_10k 100: tier-rules 「수식이 있는 시험지」 절(78쪽 수식 시험지 1건 114~212 vs 비수식 3건 0.3~8.2).
 - latin_ratio 0.5: tier-rules 「Mistral Primary 고려 조건」의 "영어 비율 50%"(근거 미표기).
+- 이미지 쪽 30%·큰 이미지 5%: 관행값. 실측 1건(63쪽 카탈로그의 62쪽이 64%, 실적표 2종은 0%).
+- 저해상도 150DPI: 관행값(OCR 권장 300DPI의 절반). 실측 1건은 100DPI에서 작은 숫자 오독.
 """
 
 import json
 import os
 import re
+import statistics
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
@@ -55,6 +61,10 @@ TABLE_HINT_RATIO = 0.3
 PUA_PER_10K_THRESHOLD = 100.0
 LATIN_RATIO_THRESHOLD = 0.5
 SAMPLE_MAX = 12
+IMAGE_PAGE_SHARE = 0.3     # 쪽 면적 대비 내장 이미지 면적이 이 이상이면 "이미지 쪽"
+IMAGE_MIN_SHARE = 0.05     # 이보다 작은 이미지(로고·아이콘)는 세지 않는다
+IMAGE_DOC_SHARE = 0.3      # 표본 쪽 중 "이미지 쪽"이 이 이상이면 표·본문이 이미지인 문서로 알린다
+LOW_DPI_THRESHOLD = 150    # 큰 이미지의 유효 해상도가 이 미만이면 "저해상도"
 
 _PUA = re.compile("[\ue000-\uf8ff]")  # 보이지 않는 PUA 글자를 문자 그대로 쓰지 않는다(복사하면 깨진다)
 _HANGUL = re.compile("[가-힣]")
@@ -127,6 +137,32 @@ def page_has_ruled_grid(page, min_lines=3, tol=1.0):
     return grid_v >= min_lines
 
 
+def page_image_stats(page, fitz):
+    """쪽 면적 대비 내장 이미지 면적 비율과 큰 이미지들의 유효 해상도(DPI) 목록.
+
+    글자층이 있어도 표·본문이 이미지로 박힌 쪽은 글자층 추출로는 비어 나온다. 유효 해상도는
+    이미지 픽셀 수를 쪽 위에 놓인 크기로 나눈 값이라, 렌더 배율을 올려도 이 값을 넘는 정보는
+    생기지 않는다. 회전된 이미지도 같은 값이 나오도록 넓이로 계산한다.
+    """
+    area = page.rect.width * page.rect.height
+    if not area:
+        return 0.0, []
+    share_sum = 0.0
+    dpis = []
+    for info in page.get_image_info():
+        full = fitz.Rect(info["bbox"])
+        shown = full & page.rect
+        if shown.is_empty or not full.width or not full.height:
+            continue
+        share = shown.width * shown.height / area
+        if share < IMAGE_MIN_SHARE:
+            continue
+        share_sum += share
+        square_inches = (full.width / 72) * (full.height / 72)
+        dpis.append((info["width"] * info["height"] / square_inches) ** 0.5)
+    return min(share_sum, 1.0), dpis
+
+
 def sample_page_indexes(pages, limit=SAMPLE_MAX):
     """앞 3쪽 + 문서 전체에 고르게 퍼진 쪽(0-based, 중복 제거·정렬).
 
@@ -161,11 +197,19 @@ def assess_pdf(file_path):
     # 텍스트 레이어: 표본 쪽마다 글자 수를 세고, 과반이 50자 이상이면 true.
     text_pages = 0
     text_all = []
+    image_pages = low_dpi_image_pages = 0
+    image_dpis = []
     for i in sampled:
         t = doc[i].get_text()
         text_all.append(t)
         if len(t.strip()) >= TEXT_PAGE_MIN_CHARS:
             text_pages += 1
+        share, dpis = page_image_stats(doc[i], fitz)
+        if share >= IMAGE_PAGE_SHARE:
+            image_pages += 1
+            image_dpis.extend(dpis)
+            if min(dpis) < LOW_DPI_THRESHOLD:
+                low_dpi_image_pages += 1
     has_text_layer = text_pages * 2 >= len(sampled) if sampled else False
 
     # 표 힌트: 벡터 괘선 격자 기반. 구 휴리스틱(파이프·탭 문자)은 선으로 그린
@@ -209,6 +253,9 @@ def assess_pdf(file_path):
             "text_pages": text_pages,
             "pua_per_10k": pua_per_10k,
             "latin_ratio": latin_ratio,
+            "image_pages": image_pages,
+            "low_dpi_image_pages": low_dpi_image_pages,
+            "image_dpi_median": round(statistics.median(image_dpis)) if image_dpis else None,
         },
     }
 
@@ -358,6 +405,19 @@ def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None)
             hints.append("ODL Primary 채택 전 본문 숫자 검증")
         if pages is not None and pages <= 20:
             hints.append("PDF 시각 판독 = ground truth (≤20p)")
+        if has_text_layer and signals.get("image_pages"):
+            sampled = len(signals["sampled_pages"])
+            where = f"표본 {sampled}쪽 중 {signals['image_pages']}쪽에서 내장 이미지가 쪽의 30% 이상"
+            if sampled and signals["image_pages"] / sampled >= IMAGE_DOC_SHARE:
+                hint = f"글자층은 있지만 표·본문이 이미지인 PDF: {where}. 이미지 안의 표·글자는 글자층에 없다"
+            else:
+                hint = f"일부 쪽에 큰 이미지: {where}. 그 안에 표·글자가 있으면 글자층에 없으니 해당 쪽을 직접 본다"
+            if signals.get("low_dpi_image_pages"):
+                hint += (
+                    f" (저해상도: {signals['low_dpi_image_pages']}쪽, 유효 해상도 중앙값 "
+                    f"{signals['image_dpi_median']}DPI. 확대 렌더로 정보가 늘지 않으니 선명한 원본부터 요청)"
+                )
+            hints.append(hint)
     if fmt == "odt":
         hints.append("ODT: Pandoc 단독 변환은 표·상하단 정보를 조용히 빠뜨린다(content.xml 문단 전수 대조 필수)")
         hints.append("ODT: meta.xml dc:title·북마크 안내문이 본문 첫 줄에 섞이는지 검사")
@@ -381,9 +441,9 @@ def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None)
 
 def main():
     """반환값이 종료 코드다(0 성공 / 1 실패)."""
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
         print("사용법: python assess_document.py <파일경로> [--lang ko]")
-        return 1
+        return 0 if len(sys.argv) >= 2 else 1
 
     # 인수 파싱
     args = sys.argv[1:]
@@ -428,7 +488,10 @@ def main():
         result["pages"] = None
         result["has_text_layer"] = True  # 비PDF는 텍스트 기반
         result["table_hint"] = fmt == "xlsx"
-        result["signals"] = {"sampled_pages": [], "text_pages": 0, "pua_per_10k": 0.0, "latin_ratio": 0.0}
+        result["signals"] = {
+            "sampled_pages": [], "text_pages": 0, "pua_per_10k": 0.0, "latin_ratio": 0.0,
+            "image_pages": 0, "low_dpi_image_pages": 0, "image_dpi_median": None,
+        }
         if fmt == "hwpx":
             result["tier"] = "hwpx"  # 로컬 hwpx_local 우선 + Upstage 폴백
             ul = hwpx_underline(file_path)
@@ -467,4 +530,9 @@ def main():
 
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):  # Windows cp949 콘솔에서도 한글 출력이 깨지지 않게
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     sys.exit(main())

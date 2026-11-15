@@ -103,3 +103,85 @@ def test_hwpx_underline_signal_and_hint(tmp_path, monkeypatch, capsys):
     assert "자동으로 켠다" in hints(tmp_path / "a.hwpx")
     assert "--underline" in hints(span_only) and "자동" not in hints(span_only)
     assert "밑줄" not in hints(plain)
+
+
+def _image_pdf(path, pages, px, share=0.5, text="CLASS 150 FLANGES 제목 글자층은 있다 " * 3):
+    """글자층(제목)과 내장 이미지가 함께 있는 합성 PDF. px=(가로, 세로) 픽셀, share=쪽 면적 대비 이미지 비율."""
+    try:
+        import pymupdf
+    except ImportError:
+        import fitz as pymupdf
+    doc = pymupdf.open()
+    for _ in range(pages):
+        page = doc.new_page(width=720, height=540)
+        page.insert_text((40, 40), text)
+        if px:
+            pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, px[0], px[1]), False)
+            pix.clear_with(180)
+            page.insert_image(pymupdf.Rect(40, 60, 40 + 640, 60 + 540 * share * 720 / 640), pixmap=pix)
+    doc.save(path)
+    return path
+
+
+def _assess(path, monkeypatch, capsys):
+    import json
+    import sys
+    monkeypatch.setattr(sys, "argv", ["assess_document.py", str(path)])
+    assert D.main() == 0
+    return json.loads(capsys.readouterr().out)
+
+
+def test_low_resolution_image_pages_are_reported(tmp_path, monkeypatch, capsys):
+    """글자층이 있어도 쪽의 절반이 100DPI 안팎 이미지면 신호와 힌트로 드러낸다(표가 이미지로 박힌 카탈로그)."""
+    out = _assess(_image_pdf(tmp_path / "lowres.pdf", 4, (640 * 100 // 72, 300 * 100 // 72)), monkeypatch, capsys)
+    assert out["has_text_layer"] is True
+    sig = out["signals"]
+    assert sig["image_pages"] == 4
+    assert sig["low_dpi_image_pages"] == 4
+    assert 95 <= sig["image_dpi_median"] <= 105
+    hints = " ".join(out["rule_hints"])
+    assert "글자층은 있지만 표·본문이 이미지인 PDF" in hints
+    assert "저해상도" in hints
+
+
+def test_high_resolution_image_pages_get_image_hint_without_low_dpi(tmp_path, monkeypatch, capsys):
+    out = _assess(_image_pdf(tmp_path / "hires.pdf", 4, (640 * 300 // 72, 300 * 300 // 72)), monkeypatch, capsys)
+    sig = out["signals"]
+    assert sig["image_pages"] == 4 and sig["low_dpi_image_pages"] == 0
+    hints = " ".join(out["rule_hints"])
+    assert "글자층은 있지만 표·본문이 이미지인 PDF" in hints
+    assert "저해상도" not in hints
+
+
+def test_text_only_pdf_has_no_image_hint(tmp_path, monkeypatch, capsys):
+    out = _assess(_image_pdf(tmp_path / "text.pdf", 4, None), monkeypatch, capsys)
+    sig = out["signals"]
+    assert sig["image_pages"] == 0 and sig["low_dpi_image_pages"] == 0 and sig["image_dpi_median"] is None
+    assert "이미지인 PDF" not in " ".join(out["rule_hints"])
+
+
+def test_small_logo_images_are_ignored(tmp_path, monkeypatch, capsys):
+    """쪽 면적의 5% 미만인 로고·아이콘은 세지 않는다."""
+    out = _assess(_image_pdf(tmp_path / "logo.pdf", 4, (60, 20), share=0.03), monkeypatch, capsys)
+    assert out["signals"]["image_pages"] == 0
+
+
+def test_image_document_hint_needs_30_percent_of_sample():
+    """표본의 30% 이상이 이미지 쪽일 때만 '표·본문이 이미지인 PDF'로 알리고, 그 아래는 일부 쪽 알림이다."""
+    def hints(image_pages):
+        sig = dict(SIG, sampled_pages=list(range(1, 11)), image_pages=image_pages,
+                   low_dpi_image_pages=0, image_dpi_median=200)
+        return " ".join(D.rule_hints("pdf", "medium", True, False, sig, "ko", pages=40))
+    assert "표·본문이 이미지인 PDF" in hints(3)
+    assert "표·본문이 이미지인 PDF" not in hints(2) and "일부 쪽에 큰 이미지" in hints(2)
+    assert "이미지" not in hints(0)
+
+
+def test_help_is_not_taken_as_a_file_path():
+    import subprocess
+    import sys
+    from _load import ROOT
+    for flag in ("--help", "-h"):
+        run = subprocess.run([sys.executable, str(ROOT / "scripts" / "assess_document.py"), flag],
+                             capture_output=True, text=True, encoding="utf-8", stdin=subprocess.DEVNULL)
+        assert run.returncode == 0 and "사용법" in run.stdout and "찾을 수 없습니다" not in run.stdout

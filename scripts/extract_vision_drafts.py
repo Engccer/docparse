@@ -49,4 +49,9 @@ def main():
     print(f"{n}개 드래프트 -> {out_dir}")
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):  # Windows cp949 콘솔에서도 한글 출력이 깨지지 않게
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     main()

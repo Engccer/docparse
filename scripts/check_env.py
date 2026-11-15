@@ -17,11 +17,6 @@ import os
 import shutil
 import sys
 
-try:
-    sys.stdout.reconfigure(encoding="utf-8")  # Windows cp949 안전
-except Exception:
-    pass
-
 # 무료·로컬 파서 (API 키 불필요). modules: 전부 있어야 사용 가능. binaries: PATH의 실행 파일.
 LOCAL = [
     {"name": "hwpx_local", "modules": ["hwpx_tomd"], "pip": "hwpx-tomd",
@@ -150,4 +145,10 @@ def main():
 
 
 if __name__ == "__main__":
+    for _stream in (sys.stdout, sys.stderr):
+        # Windows 한국어 콘솔(cp949)에서 출력이 깨지거나 예외가 나지 않게 한다. 실행할 때만 바꾼다.
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     main()
