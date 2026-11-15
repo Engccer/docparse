@@ -61,6 +61,28 @@ def clear_stale_output(output_file):
         print(f"기존 출력 제거: {output_file}")
 
 
+def choose_underline(convert, filename, plain, forced, **opts):
+    """밑줄 보존 결과를 쓸지 정한다. 수동(forced)이거나 엔진이 밑줄 빈칸을 냈으면 밑줄 결과, 아니면 plain.
+
+    빈칸 판정은 엔진 출력의 `\\_` 개수를 쓴다(엔진은 이어진 밑줄 run을 묶어 판정하므로 그 규칙을
+    흉내 내지 않는다). 원문에 원래 있는 `\\_` 글자(경로·LaTeX)는 엔진이 이스케이프하지 않아 plain에도
+    같은 수만큼 나오므로 기준선으로 뺀다. 밑줄 변환만 실패하면 plain을 그대로 쓴다(선택 기능).
+    """
+    try:
+        ul = convert(filename, underline=True, **opts)
+    except Exception as e:  # noqa: BLE001 - 밑줄은 선택 기능이라 본 변환 결과를 지킨다
+        print(f"경고: 밑줄 보존 변환 실패로 밑줄 없이 저장합니다: {e}")
+        return plain
+    blanks = ul.markdown.count(UNDERLINE_BLANK) - plain.markdown.count(UNDERLINE_BLANK)
+    if forced or blanks > 0:
+        if not forced:
+            print(f"[알림] 밑줄 빈칸 {blanks}칸 발견: 밑줄 보존을 자동으로 켰습니다(밑줄 <u>…</u>, 빈칸 \\_).")
+        return ul
+    # header.xml을 못 읽어 빈칸 판정 자체가 불가능했다는 사실은 남긴다
+    plain.warnings.extend(w for w in ul.warnings if w.startswith(UNDERLINE_GUARD_PREFIX[1]))
+    return plain
+
+
 def main():
     """반환값이 종료 코드다(0 성공 / 1 실패)."""
     try:
@@ -112,21 +134,7 @@ def main():
         print(f"변환 중... (hwpx-tomd 엔진{', ' + ' '.join(opts) if opts else ''})")
 
         try:
-            result = None
-            if supports_underline:
-                # 빈칸 판정은 엔진 출력(\_)을 그대로 쓴다. 엔진이 이어진 밑줄 run을 묶어 판정하므로
-                # 같은 규칙을 여기서 흉내 내지 않는다.
-                ul_result = convert(filename, cell_br=cell_br, merge_fill=merge_fill, underline=True)
-                blanks = ul_result.markdown.count(UNDERLINE_BLANK)
-                if underline or blanks:
-                    result = ul_result
-                    if not underline:
-                        print(f"[알림] 밑줄 빈칸 {blanks}칸 발견: 밑줄 보존을 자동으로 켰습니다(밑줄 <u>…</u>, 빈칸 \\_).")
-            if result is None:
-                result = convert(filename, cell_br=cell_br, merge_fill=merge_fill)
-                if supports_underline:
-                    # header.xml을 못 읽으면 빈칸 판정 자체가 불가능했다는 사실은 남긴다
-                    result.warnings.extend(w for w in ul_result.warnings if w.startswith(UNDERLINE_GUARD_PREFIX[1]))
+            result = convert(filename, cell_br=cell_br, merge_fill=merge_fill)
         except HwpxEncryptedError as e:
             print("오류: 암호화된 HWPX입니다(파싱 불가).")
             print(str(e))
@@ -135,6 +143,8 @@ def main():
         except HwpxError as e:
             print(f"오류: HWPX 처리 실패: {e}")
             return False
+        if supports_underline:
+            result = choose_underline(convert, filename, result, underline, cell_br=cell_br, merge_fill=merge_fill)
 
         loss_warnings = [w for w in result.warnings if w.startswith(LOSS_PREFIXES)]
         info_warnings = [w for w in result.warnings if w not in loss_warnings]

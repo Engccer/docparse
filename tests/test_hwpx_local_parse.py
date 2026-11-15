@@ -10,7 +10,7 @@ import sys
 import pytest
 
 from _load import load
-from hwpx_fixture import BLANK, SPAN, SPAN_ONLY, make_hwpx
+from hwpx_fixture import BLANK, SPAN, SPAN_ONLY, make_hwpx, run
 
 hwpx_tomd = pytest.importorskip("hwpx_tomd")
 P = load("parsers/hwpx_local_parse.py", "hwpx_local_parse")
@@ -85,3 +85,49 @@ def test_guard_prefix_matches_engine_wording():
 
     assert core._underline_loss([["밑줄"]], "").startswith(P.UNDERLINE_GUARD_PREFIX[0])
     assert P.UNDERLINE_BLANK == core._UL_BLANK
+
+
+@needs_underline
+def test_decorative_output_identical_to_plain_convert(tmp_path, monkeypatch):
+    path = make_hwpx(tmp_path / "doc.hwpx", body=SPAN_ONLY)
+    _, md = run_main(monkeypatch, path)
+    assert md == hwpx_tomd.convert(path).markdown
+
+
+@needs_underline
+def test_literal_backslash_underscore_does_not_trigger(tmp_path, monkeypatch, capsys):
+    """원문 글자 `\\_`(경로·LaTeX)는 엔진이 이스케이프하지 않아 기준선으로 빼야 한다."""
+    body = SPAN_ONLY + "<hp:p>" + run(0, "경로 C:\\_temp 와 a\\_1") + "</hp:p>"
+    _, md = run_main(monkeypatch, make_hwpx(tmp_path / "doc.hwpx", body=body))
+    assert "<u>" not in md and "자동으로 켰" not in capsys.readouterr().out
+
+
+@needs_underline
+def test_header_failure_warning_carried_to_plain(tmp_path, monkeypatch, capsys):
+    real = hwpx_tomd.convert
+
+    def broken_header(filepath, *, underline=False, **kw):
+        res = real(filepath, underline=underline, **kw)
+        if underline:
+            res.warnings.append("header.xml을 읽지 못해 밑줄을 표시하지 못했습니다: 합성 오류")
+        return res
+
+    monkeypatch.setattr(hwpx_tomd, "convert", broken_header)
+    code, md = run_main(monkeypatch, make_hwpx(tmp_path / "doc.hwpx", body=SPAN_ONLY))
+    assert code == 0 and "<u>" not in md
+    assert "경고: header.xml을 읽지 못해" in capsys.readouterr().out
+
+
+@needs_underline
+def test_underline_conversion_error_keeps_plain(tmp_path, monkeypatch, capsys):
+    real = hwpx_tomd.convert
+
+    def ul_crash(filepath, *, underline=False, **kw):
+        if underline:
+            raise RuntimeError("합성 밑줄 오류")
+        return real(filepath, **kw)
+
+    monkeypatch.setattr(hwpx_tomd, "convert", ul_crash)
+    code, md = run_main(monkeypatch, make_hwpx(tmp_path / "exam.hwpx"))
+    assert code == 0 and "<u>" not in md
+    assert "밑줄 보존 변환 실패" in capsys.readouterr().out

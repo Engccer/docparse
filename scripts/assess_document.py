@@ -366,8 +366,8 @@ def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None)
     if fmt == "hwpx" and signals.get("underline_runs"):
         if signals.get("underline_blanks"):
             hints.append(
-                f"HWPX 밑줄 빈칸 후보 {signals['underline_blanks']}개: 엔진이 빈칸을 내면 hwpx_local이 "
-                "밑줄 보존을 자동으로 켠다(<u>…</u>, \\_)"
+                f"HWPX 밑줄 빈칸 후보 {signals['underline_blanks']}개: 엔진이 빈칸으로 판정하면 hwpx_local이 "
+                "밑줄 보존을 자동으로 켠다(<u>…</u>, \\_). 자동 켜기 알림이 없는데 밑줄이 의미를 가지면 --underline"
             )
         else:
             hints.append(
