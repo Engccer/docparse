@@ -2,7 +2,12 @@
 
 다른 *_parse.py와 동일한 인터페이스:
   python hwpx_local_parse.py "<파일.hwpx>"        → <파일>_hwpxlocal.md
-  python hwpx_local_parse.py "<파일.hwpx>" --cell-br [--merge-fill]
+  python hwpx_local_parse.py "<파일.hwpx>" --cell-br [--merge-fill] [--underline]
+
+--underline(옵트인, hwpx-tomd 0.5.0+): 밑줄 run을 `<u>…</u>`로, 공백뿐인 밑줄 run(기입용
+빈칸)을 공백 수만큼 `\_`로 낸다. 시험지·양식·계약서처럼 밑줄이 의미를 갖는 문서용이며
+assess_document.py가 HWPX에서 밑줄을 찾으면 rule_hints로 권한다. 설치된 엔진이 옵션을
+모르면 밑줄 없이 변환하고 업그레이드를 안내한다.
 
 특징(무료·오프라인): 글상자(drawText) reading-order 수집, <hp:t> tail 보존(객관식
 선택지 ②③⑤ 누락 방지), 표 cellAddr/cellSpan 그리드 배치(세로·가로 병합 보존).
@@ -23,6 +28,7 @@ HWPX 변환 후 입력한다.
 
 종료 코드: 0 = 출력 파일 생성, 1 = 오류·텍스트 손실 경고(출력 없음).
 """
+import inspect
 import os
 import sys
 import traceback
@@ -31,6 +37,8 @@ SUPPORTED_EXTENSIONS = [".hwpx"]
 # 엔진 경고 문구 중 "텍스트가 실제로 빠졌을 수 있다"는 계급. 접두로 판별한다
 # (이미지 안내 경고 본문에도 "self-recall"이라는 단어가 들어 있어 부분 문자열 매칭은 오거부).
 LOSS_PREFIXES = ("원본 단어 recall", "문자 recall", "객관식 선택지 마커")
+# 0.5.0 밑줄 보존 가드 문구. 텍스트 손실이 아니라 표기 손실이라 출력은 유지한다.
+UNDERLINE_GUARD_PREFIX = "밑줄 표시가"
 
 
 def get_output_filename(input_file):
@@ -64,6 +72,12 @@ def main():
 
     cell_br = "--cell-br" in sys.argv
     merge_fill = "--merge-fill" in sys.argv
+    underline = "--underline" in sys.argv
+    if underline and "underline" not in inspect.signature(convert).parameters:
+        import hwpx_tomd
+        print(f"[알림] 설치된 hwpx-tomd({getattr(hwpx_tomd, '__version__', '?')})는 --underline을 지원하지 않아 밑줄 없이 변환합니다.")
+        print("  밑줄·빈칸 보존은 hwpx-tomd 0.5.0 이상: pip install -U 'hwpx-tomd>=0.5.0'")
+        underline = False
     positional = [a for a in sys.argv[1:] if not a.startswith("--")]
 
     def process_file(filename):
@@ -90,10 +104,13 @@ def main():
             opts.append("--cell-br")
         if merge_fill:
             opts.append("--merge-fill")
+        if underline:
+            opts.append("--underline")
         print(f"변환 중... (hwpx-tomd 엔진{', ' + ' '.join(opts) if opts else ''})")
 
         try:
-            result = convert(filename, cell_br=cell_br, merge_fill=merge_fill)
+            kwargs = {"underline": True} if underline else {}
+            result = convert(filename, cell_br=cell_br, merge_fill=merge_fill, **kwargs)
         except HwpxEncryptedError as e:
             print("오류: 암호화된 HWPX입니다(파싱 불가).")
             print(str(e))
@@ -126,7 +143,8 @@ def main():
         for w in info_warnings:
             if "이미지" in w and result.image_count:
                 continue  # 위 한 줄로 이미 안내
-            print(f"[알림] {w}")
+            # 밑줄 보존 가드: 글자는 남았지만 밑줄·빈칸 표기가 줄었다. 출력은 유지하고 눈에 띄게 알린다.
+            print(f"경고: {w}" if w.startswith(UNDERLINE_GUARD_PREFIX) else f"[알림] {w}")
         print("=== PASS: 단어·글자 recall 및 마커 보존 가드 통과 ===")
         return True
 

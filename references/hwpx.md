@@ -64,7 +64,7 @@ hwpx_local의 변환 누락·표 정렬 붕괴·마커 손실을 발견하면, �
 *근거: **단계마다 다르다.** 1~2단계(hwpx-tomd 변환) n=33(실문서 33종 글자 멀티셋 손실 0·마커 손실 0, 2026-06-06) / 4~5단계(`hwpx_enrich` 보강·kordoc 대조) **n=1**(554쪽 보고서, 2026-08-28) / 6단계는 변환 실패 대응이라 문서 수 개념 없음 / 3·7단계는 라우팅. **절 전체를 n=33으로 읽지 말 것** — 가장 두꺼운 근거는 변환 정확도에만 해당한다*
 
 1. HWP → `hwpx-automation` 스킬의 `convert/hwp2hwpx.bat <입력.hwp>`(Windows) 또는 `convert/hwp2hwpx.sh`(macOS/Linux)로 HWPX 변환 (Java, 서식 보존).
-2. HWPX → `parsers/hwpx_local_parse.py <파일.hwpx>`로 마크다운 변환(출력 `_hwpxlocal.md`). 긴 지문이 셀 안에 있으면 `--cell-br`, 병합값 반복 기입은 `--merge-fill`.
+2. HWPX → `parsers/hwpx_local_parse.py <파일.hwpx>`로 마크다운 변환(출력 `_hwpxlocal.md`). 긴 지문이 셀 안에 있으면 `--cell-br`, 병합값 반복 기입은 `--merge-fill`, 밑줄이 의미를 갖는 시험지·양식·계약서(진단 `rule_hints`의 HWPX 밑줄 힌트)는 `--underline`(밑줄 `<u>…</u>`, 밑줄 빈칸 `\_`. hwpx-tomd 0.5.0 미만이면 밑줄 없이 변환하고 안내). `hwpx_enrich.py`는 문단 정확 일치로 보강하므로 `--underline` 없이 만든 출력에 쓴다(밑줄 표기가 있으면 경고).
 3. 이미지 경고·recall/마커 경고가 뜨거나 시각적 배치 재현이 중요하면 Upstage 추가 실행하여 비교(위 「Upstage로 교차/대체하는 경우」).
 4. 보고서류는 변환 직후 `scripts/hwpx_enrich.py`로 제목(개요 스타일)·취소선·글자색·인쇄 PDF 쪽 번호를 보강한다(위 「HWPX 결정론 보강」). 취소선·글자색의 정본은 **hwp2hwpx HWPX의 `charPr`**이며 pyhwp XML·한컴 COM 변환본의 strikeout은 오판이 확인돼 쓰지 않는다.
 5. kordoc(`npx --yes --package kordoc --package pdfjs-dist kordoc <hwp> --format json`)은 HWP를 직접 읽어 표별 rowSpan/colSpan 명세·장 제목·글꼴 크기를 JSON으로 주므로 **보조 메타·대조용**으로 유용하다(2026-08-28 554쪽 보고서에서 본문 글자 hwpx_local과 동일, 누락 1자). 단 쪽 번호는 자체 추정(495쪽 vs 인쇄 554쪽)이라 인쇄본 쪽수로 쓰지 않는다. 2026-03의 표 중심 문서 파싱 실패 사례가 있어 Primary로는 여전히 비권장.

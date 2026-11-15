@@ -75,3 +75,23 @@ def test_odt_hint_names_pandoc_loss_and_metadata_title():
     hints = D.rule_hints("odt", "odt", True, False, SIG, "ko")
     assert any("Pandoc" in h and "content.xml" in h for h in hints)
     assert any("dc:title" in h for h in hints)
+
+
+def test_hwpx_underline_signal_and_hint(tmp_path, monkeypatch, capsys):
+    """HWPX 밑줄 run·공백 빈칸을 세고, 있으면 --underline을 권한다(합성 HWPX)."""
+    import json
+    import sys
+    from hwpx_fixture import make_hwpx, run
+
+    assert D.hwpx_underline(make_hwpx(tmp_path / "a.hwpx")) == {"underline_runs": 3, "underline_blanks": 1}
+    plain = make_hwpx(tmp_path / "b.hwpx", body="<hp:p>" + run(0, "밑줄 없음") + "</hp:p>")
+    assert D.hwpx_underline(plain) == {"underline_runs": 0, "underline_blanks": 0}
+    assert D.hwpx_underline(make_hwpx(tmp_path / "c.hwpx", header=False)) == {"underline_runs": 0, "underline_blanks": 0}
+    (tmp_path / "broken.hwpx").write_bytes(b"not a zip")
+    assert D.hwpx_underline(tmp_path / "broken.hwpx") is None
+
+    for path, want in ((tmp_path / "a.hwpx", True), (plain, False)):
+        monkeypatch.setattr(sys, "argv", ["assess_document.py", str(path)])
+        assert D.main() == 0
+        out = json.loads(capsys.readouterr().out)
+        assert any("--underline" in h for h in out["rule_hints"]) is want

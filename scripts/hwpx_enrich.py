@@ -190,6 +190,11 @@ def join_row(cells) -> str:
     return "| " + " | ".join(cells) + " |"
 
 
+def has_underline_markup(lines) -> bool:
+    """hwpx_local_parse.py --underline 출력인지(`<u>` 구간 또는 `\\_` 빈칸)."""
+    return any("<u>" in line or "\\_" in line for line in lines)
+
+
 def apply_annotations(lines, annots, report):
     """세그먼트(줄 / 셀 / 셀 내 <br> 조각)가 원문과 정확히 같을 때만 주석본으로 치환.
 
@@ -474,6 +479,9 @@ def main():
     for sid in part_styles:
         layout_texts |= all_style_text.get(sid, set())
     lines = open(args.md, encoding="utf-8").read().split("\n")
+    if has_underline_markup(lines):
+        print("경고: 입력 md에 밑줄 표기(<u>·\\_)가 있습니다. 그 줄은 원문 문단과 정확히 일치하지 않아 "
+              "제목·서식 보강에서 빠집니다. 보강은 --underline 없이 만든 출력에 쓰세요.", file=sys.stderr)
 
     # 1) 최상위 문단 정렬 → 제목 승격·삭제
     style_at = align_top_paragraphs(lines, top_paras, report)

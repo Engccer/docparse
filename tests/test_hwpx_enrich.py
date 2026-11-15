@@ -64,3 +64,10 @@ def test_heading_seen_on_more_than_three_pages_is_not_a_locator():
     pages = [page(n, "부록 신청 서식 제목 옆탭") for n in (1, 2, 3, 4)] + [page(5, "본문 문장이 충분히 길어서 키가 됩니다 하나둘셋")]
     result = printed(E.assign_pages(lines, pages, {}, heading_idx={0}), pages)
     assert result == [5, 5], result  # 제목은 자기 매칭 대신 뒤 본문 쪽을 물려받는다
+
+
+def test_underline_markup_detected():
+    """--underline 출력은 정확 일치 보강에서 줄이 빠지므로 경고 대상이다."""
+    assert E.has_underline_markup(["앞", "(A) <u>밑줄</u> 뒤"])
+    assert E.has_underline_markup(["I am \\_\\_\\_ to school."])
+    assert not E.has_underline_markup(["~~취소~~ <mark>강조</mark>", "snake_case"])

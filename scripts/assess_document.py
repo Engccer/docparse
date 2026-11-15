@@ -18,6 +18,7 @@ Output (stdout, JSON):
             "text_pages": 12,            # 표본 중 50자 이상 텍스트가 있는 쪽 수
             "pua_per_10k": 3.1,          # 텍스트 레이어 1만 자당 PUA(U+E000~F8FF) 코드포인트
             "latin_ratio": 0.12          # 문자(한글+라틴) 중 라틴 비율
+            # HWPX만: "underline_runs" 밑줄 글자 모양 run 수, "underline_blanks" 그중 공백뿐인 run(기입용 빈칸) 수
         },
         "rule_hints": ["..."]            # references/tier-rules.md 절 이름. 진단으로 걸린 것만
     }
@@ -37,6 +38,7 @@ import json
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 import zipfile
 
 
@@ -280,6 +282,49 @@ def odt_embedded_images(file_path):
         return None
 
 
+def _local(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def hwpx_underline(file_path):
+    """HWPX 밑줄 run 수와 그중 공백뿐인 run(기입용 빈칸) 수. 읽을 수 없으면 None(진단 불가).
+
+    밑줄은 header.xml charPr의 ``<hh:underline type>``이 NONE이 아닌 글자 모양이다
+    (hwpx-tomd 0.5.0 ``underline=True``와 같은 기준).
+    """
+    def parse(zf, name):
+        raw = re.sub(rb"[\x00-\x08\x0b\x0c\x0e-\x1f]", b"", zf.read(name))
+        return ET.fromstring(raw)
+
+    try:
+        with zipfile.ZipFile(file_path) as zf:
+            names = zf.namelist()
+            if "Contents/header.xml" not in names:
+                return {"underline_runs": 0, "underline_blanks": 0}
+            ids = {
+                cp.get("id")
+                for cp in parse(zf, "Contents/header.xml").iter()
+                if _local(cp.tag) == "charPr" and any(
+                    _local(c.tag) == "underline" and (c.get("type") or "NONE").upper() != "NONE" for c in cp
+                )
+            }
+            runs = blanks = 0
+            for name in names:
+                if not re.fullmatch(r"Contents/section\d+\.xml", name) or not ids:
+                    continue
+                for r in parse(zf, name).iter():
+                    if _local(r.tag) != "run" or r.get("charPrIDRef") not in ids:
+                        continue
+                    text = "".join("".join(t.itertext()) for t in r if _local(t.tag) == "t")
+                    if not text:
+                        continue
+                    runs += 1
+                    blanks += not text.strip()
+            return {"underline_runs": runs, "underline_blanks": blanks}
+    except (OSError, KeyError, zipfile.BadZipFile, ET.ParseError):
+        return None
+
+
 def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None):
     """진단만으로 걸리는 tier-rules 절 이름. 걸리지 않은 절은 적지 않는다(해당 없음 ≠ 미판정).
 
@@ -307,6 +352,11 @@ def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None)
         hints.append("ODT: meta.xml dc:title·북마크 안내문이 본문 첫 줄에 섞이는지 검사")
         if signals.get("embedded_images"):
             hints.append(f"ODT: 내장 이미지 {signals['embedded_images']}개. 파서는 텍스트만 추출하므로 이미지 내용은 따로 판독(odt_verify.py가 미추출로 구분 보고)")
+    if fmt == "hwpx" and signals.get("underline_runs"):
+        hints.append(
+            f"HWPX 밑줄 run {signals['underline_runs']}개(공백 빈칸 {signals['underline_blanks']}개): "
+            "시험지·양식·계약서처럼 밑줄이 의미를 가지면 hwpx_local_parse.py --underline"
+        )
     if lang != "ko":
         hints.append("비한국어 문서 조건 정밀화")
     return hints
@@ -364,6 +414,9 @@ def main():
         result["signals"] = {"sampled_pages": [], "text_pages": 0, "pua_per_10k": 0.0, "latin_ratio": 0.0}
         if fmt == "hwpx":
             result["tier"] = "hwpx"  # 로컬 hwpx_local 우선 + Upstage 폴백
+            ul = hwpx_underline(file_path)
+            if ul is not None:
+                result["signals"].update(ul)
         elif fmt == "hwp":
             result["tier"] = "hwpx"  # HWPX 변환 후 hwpx 티어로 처리(직접은 Upstage)
         elif fmt == "xlsx":
