@@ -7,7 +7,7 @@ description: >
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
 metadata:
-  version: "1.11.0"
+  version: "1.12.0"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
@@ -44,6 +44,8 @@ metadata:
 | `corepin_parse.py` | `_corepin.md` | COREPIN_API_KEY | AI3 OSS 엔진 라우터(텍스트PDF→opendataloader, HWP/HWPX→kordoc, Office→markitdown, **스캔→AI3 자체 OCR**) + 한국어 필터 SLM. 18종 단일 API, 장당 2원. **스캔 양식에서 표 구조 소실 검증됨** → Primary 부적합, 보조/비교용 |
 | `cohere_parse.py` | `_cohere.md` | COHERE_API_KEY | `parse-v5.0`(Cohere Parse, 2.3B VLM·8,192 토큰). 마크다운 + HTML 표 + 이미지 설명. **한국어가 9개 안정 지원 언어에 포함**, $1.50/1,000쪽(트라이얼 키 월 1,000콜 무료). ⚠️ 엔드포인트가 **이미지만** 받아 PDF는 PyMuPDF 렌더 후 **쪽당 1회 호출**(쪽수=호출수=과금). 쪽당 출력이 8,192 토큰에 닿으면 잘릴 수 있어 근접 시 경고. **아직 실측 등급 없음** — 티어 배정 없이 후보로만 존재 |
 | `openai_parse.py` | `_openai.md` | OPENAI_API_KEY | 기본 `gpt-5.6-terra`(GPT-5.6 계열 중간 티어. 대량·저비용은 `--model gpt-5.6-luna`, 최난도 스캔은 `gpt-5.6-sol`). **OpenAI에는 전용 파서·OCR 엔드포인트가 없어** Responses API에 PDF·이미지를 넣고 범용 멀티모달 모델이 마크다운을 쓰게 하는 방식이다(**실패 양상은 Gemini와 같은 계열** — 장문 요약화). 그래서 PDF를 기본 8쪽 구간으로 나눠 호출하고(`--pages-per-call`, PyMuPDF 필요) 구간 주석을 남긴다. `--effort`·`--detail`·`--verbosity` 조절 가능. Office(.docx·.pptx·.xlsx·.odt)도 받지만 **텍스트만 추출**되므로 로컬 결정론 파서가 거부·승격할 때의 후보다(HWPX는 미지원). **ODT는 로컬 파서가 없어 이 파서가 1순위**(공문 1건 실측: content.xml 문단 68개 전부 보존, 첫 줄에 meta.xml `dc:title` 안내문 혼입·빈 셀 `-` 채움·결재표 재배치 있음). 응답이 completed가 아니면(출력 상한 도달 등) 저장하지 않는다. **실측 등급은 ODT 1건뿐** — odt 티어 외에는 티어 배정 없이 후보로만 존재 |
+| `anthropic_parse.py` | `_anthropic.md` (`--suffix 이름`이면 `_anthropic-이름.md`) | ANTHROPIC_API_KEY_DOCPARSE (없으면 ANTHROPIC_API_KEY) | 기본 `claude-opus-5-5`(대량·저비용은 `--model claude-sonnet-5-5`·`claude-haiku-5-5`, 최난도 판독은 `claude-fable-5-2`). **Anthropic에도 전용 파서·OCR 엔드포인트가 없어** Messages API에 PDF(document 블록)·이미지를 넣는 범용 LLM 방식이다(**실패 양상은 Gemini·OpenAI와 같은 계열** — 장문 요약화). PDF를 기본 8쪽 구간으로 나눠 호출하고(`--pages-per-call`, PyMuPDF 필요) 구간 주석을 남긴다. `--effort low|medium|high|xhigh|max`(기본 medium). 이미지는 긴 변 2,576px을 넘으면 API가 줄여서 보므로 작은 글자는 띠 조각으로 넣는다. 입력은 **PDF·이미지뿐**(Office·HWPX 미지원). 안전 분류기가 거절하면 서버 측 대체 모델이 처리하고 구간 주석에 그 모델을 남긴다(`--no-fallback`으로 끔). stop_reason이 end_turn이 아니면(절단·거부) 저장하지 않는다. **실측은 합성 스캔 3쪽 1건** — 티어 배정 없이 후보로만 존재 |
+| `azure_parse.py` | `_azure.md` | AZURE_DOCINTEL_API_KEY_DOCPARSE + AZURE_DOCINTEL_ENDPOINT_DOCPARSE (없으면 DOCUMENTINTELLIGENCE_API_KEY + DOCUMENTINTELLIGENCE_ENDPOINT) | Azure Document Intelligence `prebuilt-layout`(REST `2024-11-30`, 마크다운 출력). **비-LLM OCR·레이아웃 엔진**이라 요약화가 없고 **단어별 confidence**를 준다(0.8 미만 단어를 표준 출력에 나열, `--json`으로 좌표·손글씨 판정까지 저장). 표는 `rowspan`·`colspan`을 가진 HTML 표, 쪽 경계는 `<!-- PageBreak -->`. `--high-res`(작은 글자·수치표, 추가 요금), `--pages`, `--locale`, `--model prebuilt-read`(글자만·저가). PDF·이미지(BMP·TIFF·HEIF 포함)·DOCX·XLSX·PPTX·HTML을 받되 Office·HTML은 문서 안 이미지를 보지 않고 add-on·`--pages`가 안 된다(HWPX 미지원). 한국어 인쇄체·손글씨 지원. S0 기준 layout $10/1,000쪽, read $1.50, 고해상도 +$6. ⚠️ **무료 F0는 문서의 처음 2쪽만 처리** — PDF·TIFF 쪽수와 처리 쪽수가 다르면 저장하지 않는다. 키와 엔드포인트는 같은 이름 짝에서만 고른다. **실측은 합성 스캔 3쪽 1건** — 후보 |
 | `gvision_parse.py` | `_gvision.md` | GOOGLE_VISION_API_KEY **또는** GV_TOKEN+GV_PROJECT | **비-LLM OCR + 단어별 confidence**. 수기 손글씨 답안 등 오기 보존 critical 문서 전용. 자동교정·인명환각 없이 literal 추출, 저신뢰(<0.90) 단어를 페이지별로 표기 → 시각 판독 표적 자동 생성. PDF는 PyMuPDF로 렌더 후 페이지별 호출. 무료 1,000p/월. confidence calibration 실증. reading order·체크박스는 약점(v2 병행) |
 
 ### 스크립트 (`scripts/`)
@@ -95,6 +97,8 @@ metadata:
 | **Gemini** (latest/thinking) | B-(≤15p) | 소형 A / **장문 요약화 F** | A+ | A+ | A+ 포맷 / C 스캔 열(시프트 잔존) | **장문 Primary 금지**(요약화), ≤15p만. 체크박스·한글이름 A(thinking ON 보조). 기본 `thinking_level="low"` |
 | **Cohere Parse** (parse-v5.0) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 0건.** 이 줄의 등급은 평가 전까지 비운다(공급사 주장 ParseBench 79.2 > Mistral OCR 4 74.5는 근거가 아니다). confidence 미제공. 입력 제약은 위 파서 표 |
 | **OpenAI** (gpt-5.6) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 0건.** 이 줄의 등급은 평가 전까지 비운다(공급사 벤치마크는 근거가 아니다). 전용 파서가 아닌 범용 LLM이라 **구조적으로 Gemini와 같은 요약화 위험**을 안고 있고, 쪽 구간 분할은 완화일 뿐 제거가 아니다. 입력 제약(Office는 텍스트만, HWPX 미지원)은 위 파서 표 |
+| **Anthropic** (claude-opus-5-5) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 1건(합성 스캔 3쪽: 본문·표 2개 전부 일치, 병합 칸은 값 반복으로 풀림).** 등급은 실문서 평가 전까지 비운다. 범용 LLM이라 **Gemini·OpenAI와 같은 요약화 위험**을 안고 있고 쪽 구간 분할은 완화일 뿐이다. 이미지 수치표 판독은 서브에이전트 실측(`image-tables.md`)이 있으나 이 파서 경로로는 미실측 |
+| **Azure Document Intelligence** (prebuilt-layout) | 미평가 | 미평가 | 미평가 | 미평가 | 미평가 | **실측 1건(합성 스캔 3쪽: 병합 칸 표 구조까지 복원, 글자 오독 0).** 등급은 실문서 평가 전까지 비운다. 단어별 confidence 제공(Google Vision과 같은 용도). 자간이 넓은 숫자를 `2 0 2 6`처럼 띄어 읽은 사례 1건(gotchas) |
 | **Google Vision** (수기) | A-(수기 전용) | A(손글씨) | **A (오기 보존)** | F(미생성) | C(미지원) | **단어별 confidence 제공(평균 0.95+, 저신뢰 ~7%·잘 calibrated)**. 수기 오기 보존·환각 0. reading order 흐트러짐·체크박스 판정 불안정·클라우드 PII |
 
 ## 실행 워크플로우
@@ -235,7 +239,7 @@ timeout 300 python <스킬루트>/parsers/upstage_parse.py "<파일.hwpx>" < /de
 
 - 최종 fused 파일은 `<파일명>_fused_v3_<파서조합>.md`다.
 - `<파서조합>`은 **실제로 이 결과물에 내용이 반영된 파서만** Primary부터 나열하고 `+`로 잇는다. 단순 대조만 하고 텍스트를 병합하지 않은 파서는 넣지 않는다(파일명이 곧 "무엇을 합쳤는가"의 기록이므로).
-- 파서 토큰은 개별 출력 접미사와 같다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`pdfplumber`·`xlsxlocal`·`docxlocal`·`corepin`·`gvision`·`cohere`·`openai`. <!-- sanitize: allow 파서 토큰 gemini -->
+- 파서 토큰은 개별 출력 접미사와 같다: `llamaparse`·`upstage`·`gemini`·`mistral`·`opendataloader`·`hwpxlocal`·`pdfplumber`·`xlsxlocal`·`docxlocal`·`corepin`·`gvision`·`cohere`·`openai`·`anthropic`·`azure`. <!-- sanitize: allow 파서 토큰 gemini -->
 - 예: LlamaParse Primary에 Upstage heading·메타데이터를 패치하면 `_fused_v3_llamaparse+upstage.md`, Mistral 단독 채택이면 `_fused_v3_mistral.md`, hwpx_local 단독이면 `_fused_v3_hwpxlocal.md`.
 - **Primary base를 만들 때는 Primary 파서명만 붙이고, Step 6에서 보조 파서 내용을 실제로 반영할 때마다 파일명에 `+<파서>`를 덧붙여 rename한다.**
 
@@ -313,7 +317,7 @@ python <스킬루트>/scripts/compare_outputs.py "<primary.md>" "<upstage.md>"
 mkdir -p "<파일 디렉토리>/_work-docparse"
 mv "<파일명>_llamaparse.md" "<파일명>_upstage.md" "<파일 디렉토리>/_work-docparse/"
 # 사용된 경우 _gemini.md, _mistral.md, _opendataloader.md, _hwpxlocal.md, _pdfplumber.md,
-# _xlsxlocal.md, _docxlocal.md, _gvision.md, _corepin.md, _cohere.md, _openai.md, _with_alt.md도 이동
+# _xlsxlocal.md, _docxlocal.md, _gvision.md, _corepin.md, _cohere.md, _openai.md, _anthropic.md, _azure.md(.json), _with_alt.md도 이동
 # (로컬 티어 단독 채택이면 그 출력을 _fused_v3_<토큰>.md로 채택)
 ```
 
@@ -349,7 +353,7 @@ fused 산출로 작업이 끝나지 않는다. 매 파싱 작업의 끝에 아�
 | `MISTRAL_API_KEY` | 조건부 (불일치·비한국어·스캔 16쪽 이상) | 3자 교차 검증용 |
 | `COREPIN_API_KEY` | 조건부 (HWP 네이티브·한국어 문서 비교) | Corepin 통합 문서 파서 |
 | `GOOGLE_VISION_API_KEY` | 조건부 (수기 손글씨 답안) | Vision 파서 인증(API 키). 또는 `GV_TOKEN`(=`gcloud auth print-access-token`)+`GV_PROJECT`. Vision API 활성화 필요 |
-| `COHERE_API_KEY`·`OPENAI_API_KEY` | 후보 파서 비교 실행 시 | 등급 미평가 후보 |
+| `COHERE_API_KEY`·`OPENAI_API_KEY`·`ANTHROPIC_API_KEY_DOCPARSE`·`AZURE_DOCINTEL_API_KEY_DOCPARSE`+`AZURE_DOCINTEL_ENDPOINT_DOCPARSE` | 후보 파서 비교 실행 시 | 등급 미평가 후보. Anthropic·Azure는 파서 전용 이름을 먼저 읽고 없으면 표준 이름(`ANTHROPIC_API_KEY`, `DOCUMENTINTELLIGENCE_API_KEY`+`DOCUMENTINTELLIGENCE_ENDPOINT`)을 쓴다 |
 | Java Runtime | large 이상 (ODL), HWP 변환 | OpenDataLoader·hwp2hwpx용 |
 
 변수 목록의 정본은 `.env.example`, 준비 상태 점검은 `scripts/check_env.py`(Step 0).

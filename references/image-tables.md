@@ -100,6 +100,8 @@ python "<스킬루트>/scripts/cell_vote.py" \
 
 ## Claude 서브에이전트 판독 운영
 
+서브에이전트를 쓸 수 없는 환경에서는 `anthropic_parse.py --model claude-sonnet-5-5 --suffix sonnet <조각.png>`와 `anthropic_parse.py --suffix opus <조각.png>`(Opus가 기본 모델)로 같은 계열의 판독 두 벌을 얻는다. `--suffix`를 빼면 출력 이름이 같아 두 번째 실행이 첫 판독을 지운다. 아래 실측은 서브에이전트 판독의 것이고, 파서 경로의 조각 판독은 아직 재지 않았다.
+
 - 한 에이전트에 한 쪽(격자 몇 개)만 맡긴다. 모델은 Sonnet과 Opus를 각각 한 벌씩 따로 돌린다.
 - 경로는 **절대경로**로 준다. 작업 폴더가 다르면 상대경로는 다른 곳을 가리킨다.
 - 이미지 읽기 도구는 큰 그림을 폭 2,000화소로 줄인다. 조각은 `--max-width 2000`(기본값) 이하로 만들고, overview만 보지 말고 **띠 조각을 전부** 열게 한다.

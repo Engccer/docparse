@@ -4,6 +4,12 @@
 
 ## 2026-11-16
 
+### 추가 (1.12.0: Anthropic·Azure Document Intelligence 파서)
+- `parsers/anthropic_parse.py`: Claude Messages API로 PDF·이미지를 마크다운으로 옮긴다. 기본 모델 `claude-opus-5-5`, `--effort`(기본 medium), PDF 쪽 구간 분할(`--pages-per-call`, 기본 8), 스트리밍 수신, 서버 측 거부 대체(`--no-fallback`으로 끔, 대체 모델은 구간 주석에 남김), `--suffix`(같은 파일을 모델을 바꿔 여러 벌 판독할 때 출력 이름을 나눔). 요청은 `api.anthropic.com`으로 고정한다(`ANTHROPIC_BASE_URL`을 따르지 않음). stop_reason이 end_turn이 아니면 저장하지 않는다. 키는 `ANTHROPIC_API_KEY_DOCPARSE`, 없으면 `ANTHROPIC_API_KEY`. 의존성 `anthropic` SDK.
+- `parsers/azure_parse.py`: Azure Document Intelligence `prebuilt-layout`(REST `2024-11-30`, 마크다운 출력)을 표준 라이브러리로 호출한다. HTML 표(병합 칸 보존), 단어별 confidence 요약, `--high-res`·`--features`·`--pages`·`--locale`·`--model prebuilt-read`·`--json`. PDF·TIFF 쪽수와 처리 쪽수가 다르면(무료 F0의 2쪽 절단) 저장하지 않는다. 분석 요청의 시간 초과는 이중 과금을 피하려 재전송하지 않는다. 키와 엔드포인트는 `AZURE_DOCINTEL_API_KEY_DOCPARSE`·`AZURE_DOCINTEL_ENDPOINT_DOCPARSE`, 없으면 `DOCUMENTINTELLIGENCE_API_KEY`·`DOCUMENTINTELLIGENCE_ENDPOINT`.
+- `check_env.py`·`.env.example`·`requirements.txt`에 두 파서를 더했다. 회귀 시험 `tests/test_anthropic_parse.py`·`tests/test_azure_parse.py`.
+- 두 파서는 합성 스캔 3쪽 1건으로만 실호출 확인했고 등급·티어 배정은 없다(후보). 실문서 평가는 `docs/BACKLOG.md`.
+
 ### 추가 (1.11.0: 이미지 수치표 다중 판독 대조)
 - `scripts/image_tables.py`: PDF에 이미지로 박힌 표의 격자를 쪽마다 세고 판독용 조각(표 전체·머리글·머리글 붙인 행 띠)과 `manifest.json`을 만든다. 원본 해상도 렌더 뒤 Lanczos 확대만 쓰며 값은 읽지 않는다. 쪽별 격자 수는 파서가 통째로 빠뜨린 표를 찾는 기준이다.
 - `scripts/cell_vote.py`: 독립 판독 2벌 이상을 칸 단위로 대조한다. 표기 정규화(대분수·대시·쉼표 소수), 행·열 재정렬, 분류(계열을 넘는 전원 일치·과반만 확정, 그 밖은 재확인), 숫자 혼동 쌍 표시, 재확인 목록(JSON·CSV). 확정 칸만 `consensus`에 값이 있고, 어느 판독에든 있는 행·열은 합의 격자나 재확인 목록에 드러난다.
