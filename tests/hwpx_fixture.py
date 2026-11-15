@@ -35,6 +35,10 @@ BODY = (
     "<hp:p>" + run(0, "1. 다음 빈칸에 알맞은 말을 쓰시오. I am ") + run(1, "      ") + run(0, " to school.") + "</hp:p>"
     "<hp:p>" + run(0, "2. (A) ") + run(1, "밑줄 친") + run(1, " 부분") + run(0, " 중 어법상 틀린 것은?") + "</hp:p>"
 )
+# 빈칸 없이 밑줄 구간만 있는 문서(장식 밑줄 또는 어법 문항만)
+SPAN_ONLY = "<hp:p>" + run(0, "2. (A) ") + run(1, "밑줄 친") + run(1, " 부분") + run(0, " 중 어법상 틀린 것은?") + "</hp:p>"
+# 탭으로 그은 밑줄 빈칸(엔진은 tab을 공백 한 칸으로 읽는다)
+TAB_BLANK = "<hp:p>" + run(0, "Name ") + '<hp:run charPrIDRef="1"><hp:t><hp:tab/></hp:t></hp:run>' + run(0, " end") + "</hp:p>"
 BLANK = "\\_" * 6
 SPAN = "<u>밑줄 친 부분</u>"
 

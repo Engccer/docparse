@@ -4,10 +4,10 @@
   python hwpx_local_parse.py "<파일.hwpx>"        → <파일>_hwpxlocal.md
   python hwpx_local_parse.py "<파일.hwpx>" --cell-br [--merge-fill] [--underline]
 
---underline(옵트인, hwpx-tomd 0.5.0+): 밑줄 run을 `<u>…</u>`로, 공백뿐인 밑줄 run(기입용
-빈칸)을 공백 수만큼 `\_`로 낸다. 시험지·양식·계약서처럼 밑줄이 의미를 갖는 문서용이며
-assess_document.py가 HWPX에서 밑줄을 찾으면 rule_hints로 권한다. 설치된 엔진이 옵션을
-모르면 밑줄 없이 변환하고 업그레이드를 안내한다.
+밑줄 보존(hwpx-tomd 0.5.0+): 밑줄 run을 `<u>…</u>`로, 기입용 빈칸(공백뿐인 밑줄 run)을
+공백 수만큼 `\_`로 낸다. 엔진이 밑줄 빈칸을 하나라도 내면 **자동으로 켠다**(시험지 빈칸·
+양식 기입란). 장식 밑줄만 있는 문서는 종전 출력 그대로다. `--underline`을 주면 빈칸이 없어도
+켠다. 설치된 엔진이 옵션을 모르면 밑줄 없이 변환하고 업그레이드를 안내한다.
 
 특징(무료·오프라인): 글상자(drawText) reading-order 수집, <hp:t> tail 보존(객관식
 선택지 ②③⑤ 누락 방지), 표 cellAddr/cellSpan 그리드 배치(세로·가로 병합 보존).
@@ -37,8 +37,10 @@ SUPPORTED_EXTENSIONS = [".hwpx"]
 # 엔진 경고 문구 중 "텍스트가 실제로 빠졌을 수 있다"는 계급. 접두로 판별한다
 # (이미지 안내 경고 본문에도 "self-recall"이라는 단어가 들어 있어 부분 문자열 매칭은 오거부).
 LOSS_PREFIXES = ("원본 단어 recall", "문자 recall", "객관식 선택지 마커")
-# 0.5.0 밑줄 보존 가드 문구. 텍스트 손실이 아니라 표기 손실이라 출력은 유지한다.
-UNDERLINE_GUARD_PREFIX = "밑줄 표시가"
+# 0.5.0 밑줄 경고 문구(보존 가드, header.xml 읽기 실패). 텍스트 손실이 아니라 표기 손실이라
+# 출력은 유지하되 `경고:`로 눈에 띄게 낸다.
+UNDERLINE_GUARD_PREFIX = ("밑줄 표시가", "header.xml을 읽지 못해 밑줄을")
+UNDERLINE_BLANK = "\\_"  # 엔진의 밑줄 빈칸 한 칸 표기(\_)
 
 
 def get_output_filename(input_file):
@@ -73,10 +75,11 @@ def main():
     cell_br = "--cell-br" in sys.argv
     merge_fill = "--merge-fill" in sys.argv
     underline = "--underline" in sys.argv
-    if underline and "underline" not in inspect.signature(convert).parameters:
+    supports_underline = "underline" in inspect.signature(convert).parameters
+    if not supports_underline:
         import hwpx_tomd
-        print(f"[알림] 설치된 hwpx-tomd({getattr(hwpx_tomd, '__version__', '?')})는 --underline을 지원하지 않아 밑줄 없이 변환합니다.")
-        print("  밑줄·빈칸 보존은 hwpx-tomd 0.5.0 이상: pip install -U 'hwpx-tomd>=0.5.0'")
+        print(f"[알림] 설치된 hwpx-tomd({getattr(hwpx_tomd, '__version__', '?')})는 밑줄 보존을 지원하지 않아 밑줄 없이 변환합니다.")
+        print("  밑줄 구간·빈칸 보존은 hwpx-tomd 0.5.0 이상: pip install -U 'hwpx-tomd>=0.5.0'")
         underline = False
     positional = [a for a in sys.argv[1:] if not a.startswith("--")]
 
@@ -109,8 +112,21 @@ def main():
         print(f"변환 중... (hwpx-tomd 엔진{', ' + ' '.join(opts) if opts else ''})")
 
         try:
-            kwargs = {"underline": True} if underline else {}
-            result = convert(filename, cell_br=cell_br, merge_fill=merge_fill, **kwargs)
+            result = None
+            if supports_underline:
+                # 빈칸 판정은 엔진 출력(\_)을 그대로 쓴다. 엔진이 이어진 밑줄 run을 묶어 판정하므로
+                # 같은 규칙을 여기서 흉내 내지 않는다.
+                ul_result = convert(filename, cell_br=cell_br, merge_fill=merge_fill, underline=True)
+                blanks = ul_result.markdown.count(UNDERLINE_BLANK)
+                if underline or blanks:
+                    result = ul_result
+                    if not underline:
+                        print(f"[알림] 밑줄 빈칸 {blanks}칸 발견: 밑줄 보존을 자동으로 켰습니다(밑줄 <u>…</u>, 빈칸 \\_).")
+            if result is None:
+                result = convert(filename, cell_br=cell_br, merge_fill=merge_fill)
+                if supports_underline:
+                    # header.xml을 못 읽으면 빈칸 판정 자체가 불가능했다는 사실은 남긴다
+                    result.warnings.extend(w for w in ul_result.warnings if w.startswith(UNDERLINE_GUARD_PREFIX[1]))
         except HwpxEncryptedError as e:
             print("오류: 암호화된 HWPX입니다(파싱 불가).")
             print(str(e))

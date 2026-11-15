@@ -18,7 +18,7 @@ Output (stdout, JSON):
             "text_pages": 12,            # 표본 중 50자 이상 텍스트가 있는 쪽 수
             "pua_per_10k": 3.1,          # 텍스트 레이어 1만 자당 PUA(U+E000~F8FF) 코드포인트
             "latin_ratio": 0.12          # 문자(한글+라틴) 중 라틴 비율
-            # HWPX만: "underline_runs" 밑줄 글자 모양 run 수, "underline_blanks" 그중 공백뿐인 run(기입용 빈칸) 수
+            # HWPX만: "underline_runs" 밑줄 글자 모양 run 수, "underline_blanks" 그중 공백뿐인 run 수(빈칸 근사)
         },
         "rule_hints": ["..."]            # references/tier-rules.md 절 이름. 진단으로 걸린 것만
     }
@@ -286,11 +286,22 @@ def _local(tag):
     return tag.rsplit("}", 1)[-1]
 
 
-def hwpx_underline(file_path):
-    """HWPX 밑줄 run 수와 그중 공백뿐인 run(기입용 빈칸) 수. 읽을 수 없으면 None(진단 불가).
+def _t_text(t_elem):
+    """``<hp:t>`` 전체 텍스트. tab·lineBreak는 공백(hwpx-tomd ``t_full_text``와 같은 규칙)."""
+    parts = [t_elem.text or ""]
+    for child in t_elem:
+        parts.append(" " if _local(child.tag) in ("tab", "lineBreak", "br") else "".join(child.itertext()))
+        parts.append(child.tail or "")
+    return "".join(parts)
 
-    밑줄은 header.xml charPr의 ``<hh:underline type>``이 NONE이 아닌 글자 모양이다
-    (hwpx-tomd 0.5.0 ``underline=True``와 같은 기준).
+
+def hwpx_underline(file_path):
+    """HWPX 밑줄 run 수와 그중 공백뿐인 run 수. 읽을 수 없으면 None(진단 불가).
+
+    밑줄 판정은 hwpx-tomd 0.5.0 ``underline=True``와 같다(header.xml charPr의 ``<hh:underline type>``이
+    NONE이 아님). 빈칸 수는 run 단위 근사다. 엔진은 이어진 밑줄 run을 묶어 판정하므로 밑줄 문구 사이의
+    공백 한 칸 run은 엔진에서 빈칸이 아니다. 실제 자동 켜기는 hwpx_local이 엔진 출력으로 판정한다.
+    진단은 선택 기능이라 어떤 오류든 None으로 넘기고 진단 전체를 멈추지 않는다.
     """
     def parse(zf, name):
         raw = re.sub(rb"[\x00-\x08\x0b\x0c\x0e-\x1f]", b"", zf.read(name))
@@ -304,24 +315,24 @@ def hwpx_underline(file_path):
             ids = {
                 cp.get("id")
                 for cp in parse(zf, "Contents/header.xml").iter()
-                if _local(cp.tag) == "charPr" and any(
+                if _local(cp.tag) == "charPr" and cp.get("id") is not None and any(
                     _local(c.tag) == "underline" and (c.get("type") or "NONE").upper() != "NONE" for c in cp
                 )
             }
             runs = blanks = 0
             for name in names:
-                if not re.fullmatch(r"Contents/section\d+\.xml", name) or not ids:
+                if not ids or not re.fullmatch(r"contents/section\d+\.xml", name, re.IGNORECASE):
                     continue
                 for r in parse(zf, name).iter():
                     if _local(r.tag) != "run" or r.get("charPrIDRef") not in ids:
                         continue
-                    text = "".join("".join(t.itertext()) for t in r if _local(t.tag) == "t")
+                    text = "".join(_t_text(t) for t in r if _local(t.tag) == "t")
                     if not text:
                         continue
                     runs += 1
                     blanks += not text.strip()
             return {"underline_runs": runs, "underline_blanks": blanks}
-    except (OSError, KeyError, zipfile.BadZipFile, ET.ParseError):
+    except Exception:
         return None
 
 
@@ -353,10 +364,16 @@ def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None)
         if signals.get("embedded_images"):
             hints.append(f"ODT: 내장 이미지 {signals['embedded_images']}개. 파서는 텍스트만 추출하므로 이미지 내용은 따로 판독(odt_verify.py가 미추출로 구분 보고)")
     if fmt == "hwpx" and signals.get("underline_runs"):
-        hints.append(
-            f"HWPX 밑줄 run {signals['underline_runs']}개(공백 빈칸 {signals['underline_blanks']}개): "
-            "시험지·양식·계약서처럼 밑줄이 의미를 가지면 hwpx_local_parse.py --underline"
-        )
+        if signals.get("underline_blanks"):
+            hints.append(
+                f"HWPX 밑줄 빈칸 후보 {signals['underline_blanks']}개: 엔진이 빈칸을 내면 hwpx_local이 "
+                "밑줄 보존을 자동으로 켠다(<u>…</u>, \\_)"
+            )
+        else:
+            hints.append(
+                f"HWPX 밑줄 run {signals['underline_runs']}개(빈칸 없음, 기본 출력 불변): "
+                "밑줄이 의미를 가지면 hwpx_local_parse.py --underline"
+            )
     if lang != "ko":
         hints.append("비한국어 문서 조건 정밀화")
     return hints
