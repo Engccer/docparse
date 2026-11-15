@@ -1,18 +1,23 @@
 """ODT 파싱 결과 검증: 원본 content.xml 문단과 출력 마크다운 전수 대조(SKILL.md ODT 규칙의 코드화).
 
+원본 문단과 출력은 같은 정규화(마크다운 강조·이스케이프·링크·각주 표식·HTML 태그 제거, 공백 접기)를
+거친 뒤 글자열 포함으로 비교한다.
+
 검사(하나라도 걸리면 FAIL):
-  - missing: 비어 있지 않은 문단(text:p·text:h의 자기 글. 글상자·각주 안 문단은 따로 셈)이 출력에 없음
-  - order: 출력에 있지만 원본 읽기 순서와 어긋남
-  - duplicates: 원본보다 많이 나옴(공백 뺀 6자 이상 문단만)
+  - missing: 비어 있지 않은 문단(text:p·text:h의 자기 글. 글상자 안 문단은 따로 셈)이 출력에 없음
+  - order: 출력에 있지만 원본 읽기 순서와 어긋남(공백 뺀 6자 이상 문단만 순서를 본다)
+  - duplicates: 원본(머리말·꼬리말 포함)보다 많이 나옴(공백 뺀 6자 이상 문단만)
   - table_rows: 표 한 행의 셀 글이 출력의 한 행(파이프 표 한 줄 또는 HTML <tr>)에 순서대로 모이지 않음
-    (머리행 여부를 함께 적는다)
-  - metadata_leaks: meta.xml 제목·주제·설명·키워드나 책갈피 이름이 원본 본문보다 많이 출력에 나옴
-    (본문에도 같은 글이 있으면 그 횟수까지는 정상)
+    (ODT가 반복 머리행으로 지정한 행이면 머리행으로 적는다)
+  - metadata_leaks: meta.xml 제목·주제·설명·키워드나 책갈피 이름(공백 뺀 4자 이상)이
+    원본 본문보다 많이 출력에 나옴(본문에도 같은 글이 있으면 그 횟수까지는 정상)
 보고만 하는 항목(판정에 넣지 않음):
-  - spacing_only: 띄어쓰기만 달라 공백을 빼야 일치한 문단
+  - spacing_only / spacing_rows: 띄어쓰기만 달라 공백을 빼야 일치한 문단·표 행
   - header_footer: styles.xml 머리말·꼬리말 문단의 출력 존재(일반 머리말·꼬리말은 빼도 된다)
-  - images: 내장 이미지 수와 출력의 이미지 참조 수. 파서는 ODT 이미지를 추출하지 않으므로
-    텍스트 PASS와 별개로 "not_extracted"를 표시한다.
+  - images: 내장 이미지 수와 출력의 이미지 참조 수. ODT 안 경로(Pictures/…)만 가리키는 참조는
+    추출로 보지 않는다. 텍스트 PASS와 별개로 "not_extracted"를 표시한다.
+각주 본문은 파서가 문서 끝으로 옮기므로 존재만 보고 순서는 보지 않는다.
+한계: 포함 비교라 짧은 문단은 다른 글 속에 우연히 들어 있으면 누락을 놓칠 수 있다.
 
 Usage:
     python odt_verify.py <원본.odt> <출력.md> [--json]
@@ -43,9 +48,15 @@ def q(ns, tag):
 
 PARA = {q(TEXT, "p"), q(TEXT, "h")}
 SKIP = {q(OFFICE, "annotation"), q(TEXT, "tracked-changes"), q(TEXT, "note-citation")}
-HTML_TAG = re.compile(r"</?(?:table|thead|tbody|tfoot|tr|td|th|br|p|div|span|img|sup|sub|b|i|u|strong|em)\b[^>]*>", re.I)
+HTML_TAG = re.compile(r"</?(?:table|thead|tbody|tfoot|tr|td|th|br|p|div|span|img|a|sup|sub|b|i|u|s|strong|em)\b[^>]*>", re.I)
+MD_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
+MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+AUTOLINK = re.compile(r"<((?:https?://|mailto:)?[^<>\s]+@[^<>\s]+|https?://[^<>\s]+)>")
+FOOTNOTE_MARK = re.compile(r"\[\^[^\]\s]+\]:?")
 MD_ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|<>~])")
-DUP_MIN = 6
+IMAGE_REF = re.compile(r"!\[[^\]]*\]\(\s*<?([^)\s>]*)|<img\b[^>]*\bsrc\s*=\s*[\"']?([^\"'\s>]*)", re.I)
+ORDER_MIN = DUP_MIN = 6
+META_MIN = 4
 
 
 def norm(s):
@@ -54,6 +65,18 @@ def norm(s):
 
 def nospace(s):
     return "".join(s.split())
+
+
+def clean(s):
+    """원본 문단과 출력에 똑같이 적용하는 정규화."""
+    s = HTML_TAG.sub(" ", s)
+    s = MD_IMAGE.sub(r" \1 ", s)
+    s = MD_LINK.sub(r"\1", s)
+    s = AUTOLINK.sub(r"\1", s)
+    s = FOOTNOTE_MARK.sub(" ", s)
+    s = MD_ESCAPE.sub(r"\1", s)
+    s = s.replace("**", "").replace("__", "")
+    return norm(html.unescape(s))
 
 
 def own_text(el):
@@ -73,38 +96,46 @@ def own_text(el):
     return "".join(parts)
 
 
-def walk(el, paras, tables, ctx):
-    """문서 순서대로 문단을 모으고, 표는 행마다 (머리행 여부, [셀 문단 목록])로 모은다."""
+def walk(el, out, ctx):
+    """문서 순서대로 문단을 모은다. 각주 본문은 notes로, 표는 행마다 (머리행 여부, [셀 글])로."""
     for child in el:
         tag = child.tag
         if tag in SKIP:
             continue
-        if tag in PARA:
-            text = norm(own_text(child))
+        if tag == q(TEXT, "note"):
+            walk(child, out, {**ctx, "target": out["notes"], "cell": None})
+        elif tag in PARA:
+            text = clean(own_text(child))
             if text:
-                paras.append(text)
+                ctx["target"].append(text)
                 if ctx.get("cell") is not None:
                     ctx["cell"].append(text)
-            walk(child, paras, tables, ctx)
+            walk(child, out, ctx)
         elif tag == q(TABLE, "table"):
             table = {"rows": []}
-            tables.append(table)
-            walk(child, paras, tables, {"table": table, "header": False, "cell": None, "outer": ctx.get("cell")})
+            out["tables"].append(table)
+            walk(child, out, {**ctx, "table": table, "header": False, "cell": None, "outer": ctx.get("cell")})
         elif tag == q(TABLE, "table-header-rows"):
-            walk(child, paras, tables, {**ctx, "header": True})
+            walk(child, out, {**ctx, "header": True})
         elif tag == q(TABLE, "table-row"):
             row = {"header": ctx["header"], "cells": []}
             ctx["table"]["rows"].append(row)
-            walk(child, paras, tables, {**ctx, "row": row})
+            walk(child, out, {**ctx, "row": row})
         elif tag == q(TABLE, "table-cell"):
             cell = []
-            walk(child, paras, tables, {**ctx, "cell": cell})
+            walk(child, out, {**ctx, "cell": cell})
             if cell:
                 ctx["row"]["cells"].append(" ".join(cell))
                 if ctx.get("outer") is not None:  # 중첩 표: 바깥 셀에도 글을 넘긴다
                     ctx["outer"].extend(cell)
         else:
-            walk(child, paras, tables, ctx)
+            walk(child, out, ctx)
+
+
+def collect(root):
+    out = {"paragraphs": [], "notes": [], "tables": []}
+    walk(root, out, {"target": out["paragraphs"], "cell": None})
+    return out
 
 
 def read_odt(path):
@@ -118,11 +149,9 @@ def read_odt(path):
     body = content.find(f"{q(OFFICE, 'body')}/{q(OFFICE, 'text')}")
     if body is None:
         raise ValueError("office:text 본문이 없다(텍스트 문서가 아님)")
-    paras, tables = [], []
-    walk(body, paras, tables, {"cell": None})
+    src = collect(body)
 
-    header_footer = []
-    images = set()
+    header_footer, images = [], set()
     for root in (content, styles):
         if root is None:
             continue
@@ -134,30 +163,21 @@ def read_odt(path):
         for page in styles.iter(q(STYLE, "master-page")):
             for part in page:
                 if part.tag.startswith(f"{{{STYLE}}}header") or part.tag.startswith(f"{{{STYLE}}}footer"):
-                    hf = []
-                    walk(part, hf, [], {"cell": None})
-                    header_footer.extend(hf)
+                    header_footer.extend(collect(part)["paragraphs"])
 
     metadata = set()
     if meta is not None:
         for tag in (q(DC, "title"), q(DC, "subject"), q(DC, "description"), q(META, "keyword")):
             for el in meta.iter(tag):
-                if el.text and norm(el.text):
-                    metadata.add(norm(el.text))
+                if el.text and clean(el.text):
+                    metadata.add(clean(el.text))
     for tag in ("bookmark", "bookmark-start"):
         for el in content.iter(q(TEXT, tag)):
             name = el.get(q(TEXT, "name"))
-            if name and norm(name):
-                metadata.add(norm(name))
-    return {"paragraphs": paras, "tables": tables, "header_footer": header_footer,
-            "images": sorted(images), "metadata": sorted(metadata)}
-
-
-def clean(s):
-    s = HTML_TAG.sub(" ", s)
-    s = MD_ESCAPE.sub(r"\1", s)
-    s = s.replace("**", "").replace("__", "")
-    return norm(html.unescape(s))
+            if name and clean(name):
+                metadata.add(clean(name))
+    src.update(header_footer=header_footer, images=sorted(images), metadata=sorted(metadata))
+    return src
 
 
 def row_units(md):
@@ -183,11 +203,23 @@ def in_order(unit, cells):
     return True
 
 
+def image_status(md_text, embedded):
+    refs = [a or b for a, b in IMAGE_REF.findall(md_text)]
+    extracted = [r for r in refs if r and not r.startswith("Pictures/")]
+    if embedded == 0:
+        status = "none"
+    elif len(extracted) >= embedded:
+        status = "referenced"
+    else:
+        status = "not_extracted"
+    return {"embedded": embedded, "output_refs": len(refs), "extracted_refs": len(extracted), "status": status}
+
+
 def verify(odt_path, md_text):
     src = read_odt(odt_path)
     out = clean(md_text)
     out_ns = nospace(out)
-    joined = " ".join(src["paragraphs"])
+    joined = " ".join(src["paragraphs"] + src["notes"] + src["header_footer"])
 
     missing, spacing_only, order, duplicates = [], [], [], []
     cursor = 0
@@ -195,47 +227,53 @@ def verify(odt_path, md_text):
         if p not in out:
             (spacing_only if nospace(p) in out_ns else missing).append(p)
             continue
+        if len(nospace(p)) < ORDER_MIN:
+            continue
         found = out.find(p, cursor)
         if found < 0:
             order.append(p)
         else:
             cursor = found + len(p)
-    for p in dict.fromkeys(src["paragraphs"]):
+    for p in src["notes"]:
+        if p not in out:
+            (spacing_only if nospace(p) in out_ns else missing).append(p)
+    for p in dict.fromkeys(src["paragraphs"] + src["notes"]):
         if len(nospace(p)) >= DUP_MIN and out.count(p) > joined.count(p):
             duplicates.append({"text": p, "source": joined.count(p), "output": out.count(p)})
 
     units = row_units(md_text)
-    table_rows = []
+    units_ns = [nospace(u) for u in units]
+    table_rows, spacing_rows = [], []
     for t_index, table in enumerate(src["tables"], 1):
         for r_index, row in enumerate(table["rows"], 1):
-            if row["cells"] and not any(in_order(u, row["cells"]) for u in units):
-                table_rows.append({"table": t_index, "row": r_index, "header": row["header"], "cells": row["cells"]})
+            cells = row["cells"]
+            if not cells or any(in_order(u, cells) for u in units):
+                continue
+            entry = {"table": t_index, "row": r_index, "header": row["header"], "cells": cells}
+            cells_ns = [nospace(c) for c in cells]
+            (spacing_rows if any(in_order(u, cells_ns) for u in units_ns) else table_rows).append(entry)
 
     leaks = []
     for m in src["metadata"]:
-        if out.count(m) > joined.count(m):
+        if len(nospace(m)) >= META_MIN and out.count(m) > joined.count(m):
             leaks.append({"text": m, "source_body": joined.count(m), "output": out.count(m)})
-
-    img_refs = len(re.findall(r"!\[[^\]]*\]\(", md_text)) + len(re.findall(r"<img\b", md_text, re.I))
-    n_img = len(src["images"])
-    images = {"embedded": n_img, "output_refs": img_refs,
-              "status": "none" if n_img == 0 else ("referenced" if img_refs else "not_extracted")}
 
     failed = missing or order or duplicates or table_rows or leaks
     return {
         "verdict": "FAIL" if failed else "PASS",
         "paragraphs": len(src["paragraphs"]),
+        "notes": len(src["notes"]),
         "tables": len(src["tables"]),
         "missing": missing, "order": order, "duplicates": duplicates,
         "table_rows": table_rows, "metadata_leaks": leaks,
-        "spacing_only": spacing_only,
+        "spacing_only": spacing_only, "spacing_rows": spacing_rows,
         "header_footer": [{"text": t, "in_output": t in out} for t in src["header_footer"]],
-        "images": images,
+        "images": image_status(md_text, len(src["images"])),
     }
 
 
 def render(r):
-    lines = [f"판정: {r['verdict']} (문단 {r['paragraphs']}개, 표 {r['tables']}개)"]
+    lines = [f"판정: {r['verdict']} (문단 {r['paragraphs']}개, 각주 문단 {r['notes']}개, 표 {r['tables']}개)"]
     for p in r["missing"]:
         lines.append(f"  누락: {p}")
     for p in r["order"]:
@@ -249,13 +287,15 @@ def render(r):
         lines.append(f"  메타데이터 안내문 혼입: {m['text']} (본문 {m['source_body']}회, 출력 {m['output']}회)")
     for p in r["spacing_only"]:
         lines.append(f"  참고(띄어쓰기만 다름): {p}")
+    for t in r["spacing_rows"]:
+        lines.append(f"  참고(표 {t['table']} 행 {t['row']} 띄어쓰기만 다름): {' | '.join(t['cells'])}")
     for h in r["header_footer"]:
         lines.append(f"  참고(머리말·꼬리말 {'있음' if h['in_output'] else '없음'}): {h['text']}")
     img = r["images"]
     if img["status"] == "not_extracted":
         lines.append(f"  이미지: 내장 {img['embedded']}개 미추출(텍스트 판정과 별개. 이미지 내용은 따로 판독)")
     elif img["status"] == "referenced":
-        lines.append(f"  이미지: 내장 {img['embedded']}개, 출력 참조 {img['output_refs']}개(내용 일치는 미검증)")
+        lines.append(f"  이미지: 내장 {img['embedded']}개, 출력 참조 {img['extracted_refs']}개(내용 일치는 미검증)")
     return "\n".join(lines)
 
 

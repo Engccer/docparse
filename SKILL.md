@@ -57,7 +57,7 @@ metadata:
 | `generate_alt_text.py` | 시각장애인 접근성 alt text 자동 생성 (PyMuPDF + Gemini Vision, 한국어 상세화). 실패·미매핑 placeholder는 원문 유지 + 종료 코드 1 |
 | `extract_vision_drafts.py` | 캐스케이드 ②단계: `_gvision.md`에서 페이지별 영어 드래프트(라틴 포함·한글 미포함 라인)+저신뢰 목록을 `draft_pNN.txt`로 추출. Claude repair 입력 |
 | `hwpx_enrich.py` | HWPX 결정론 보강: hwpx-tomd 출력에 **개요 스타일→`#` 제목**, **취소선 `~~`·강조색 `<mark>`**(charPr), **인쇄 PDF 실제 쪽 `<!-- p.N -->`**(pdftotext 쪽 텍스트와 전역 LIS 정렬), 간지·머리말 잔재 삭제를 문단 단위 정확 일치로만 입힌다 |
-| `odt_verify.py` | ODT 결과 검증: 원본 `content.xml` 문단을 출력과 전수 대조(누락·읽기 순서·중복·표 행 대응·머리행 표시·`meta.xml` 안내문 혼입). 띄어쓰기 차이·머리말·꼬리말·내장 이미지 미추출은 판정과 별개로 보고. PASS 0, FAIL 1 |
+| `odt_verify.py` | ODT 결과 검증: 원본 `content.xml` 문단을 출력과 전수 대조(누락·읽기 순서·중복·표 행 대응·머리행 표시·`meta.xml` 안내문 혼입). 띄어쓰기 차이·머리말·꼬리말·내장 이미지 미추출은 판정과 별개로 보고. 포함 비교라 짧은 문단(공백 뺀 6자 미만)은 순서·중복을 보지 않고, 머리행 표시는 ODT가 반복 머리행으로 지정한 표에만 붙는다. PASS 0, FAIL 1 |
 | `make_odt_fixtures.py` | 공개 가능한 합성 ODT 회귀 자료 생성(실명·실제 기관 없음, 결정론적). 머리행·병합 셀 표, 공문 상하단·글상자·머리말, 이미지, 메타데이터 안내문 5종과 각 기준 마크다운 |
 | `apply_corrections.py` | **정본 수정 목록 CSV** 적용기: 오탈자·개인정보·표기 정규화를 손으로 고치지 않고 CSV(문서·원본 쪽·원문·수정문·유형·처리·근거)로 적용·검증(원문 0회면 오류, 치환 후 잔존 검사, 원본 쪽 자동 채움). 정본을 재생성해도 같은 CSV로 같은 결과 |
 
@@ -127,7 +127,7 @@ JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 
 | **hwpx** | HWPX 파일 | hwpx_local(로컬·무료) 우선, 이미지·레이아웃 중요 시 Upstage 교차/대체 | hwpx_local |
 | **xlsx** | XLSX 파일 | xlsx_local(로컬·무료) 우선, 검증 실패·차트 텍스트 중요 시 Upstage·LlamaParse | xlsx_local |
 | **docx** | DOCX 파일 | docx_local(로컬·무료) 우선, 거부(텍스트박스·각주 등) 시 Upstage·LlamaParse | docx_local |
-| **odt** | ODT 파일 | OpenAI 직접 입력(텍스트 보존 실측 1건) + Mistral 본문 교차(표 머리행 소실). Pandoc 단독 변환 금지(표·글상자·상하단 정보 누락), 결과를 `odt_verify.py`로 content.xml 문단과 전수 대조 | openai |
+| **odt** | ODT 파일 | OpenAI 직접 입력(텍스트 보존 실측 1건) + Mistral 본문 교차(표 머리행 소실). Pandoc 단독 변환 금지(실제 공문에서 표·상하단, 합성 공문에서 글상자 누락), 결과를 `odt_verify.py`로 content.xml 문단과 전수 대조 | openai |
 | **small** | PDF ≤15p | Gemini 단독 | Gemini |
 | **medium** | PDF 16~60p | LlamaParse v2 + Upstage | LlamaParse v2 |
 | **large** | PDF 61~100p | LlamaParse v2 + ODL | LlamaParse v2 |

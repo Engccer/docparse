@@ -2,7 +2,7 @@
 
 실명·실제 기관 없이 직접 만든 ODT를 만든다. 같은 명세에서 "이상적인 파싱 결과" 마크다운
 (<이름>.reference.md)도 함께 써서, 파서 출력·검증기(odt_verify.py) 시험의 기준으로 쓴다.
-zip 항목 시각을 고정하므로 다시 실행해도 바이트 단위로 같은 파일이 나온다.
+zip 항목 시각·생성 OS·권한을 고정하므로 같은 zlib에서는 다시 실행해도 바이트 단위로 같은 파일이 나온다.
 
 Usage:
     python make_odt_fixtures.py <출력_폴더> [이름 ...]
@@ -35,7 +35,7 @@ NS = (
     'office:version="1.3"'
 )
 
-# 블록 명세: ("h", 수준, 글) / ("p", 글) / ("table", {"header": [...], "rows": [[...]]})
+# 블록 명세: ("h", 수준, 글) / ("p", 글[, 각주 글]) / ("table", {"header": [...], "rows": [[...]]})
 # / ("image", 파일이름, 대체텍스트) / ("textbox", [글, ...])
 # 표 셀은 글(str), 여러 문단(list), 또는 {"text": str|list, "colspan": n, "rowspan": n}.
 FIXTURES = {
@@ -91,12 +91,12 @@ FIXTURES = {
             ("p", "다음 그림은 합성 배치도이다."),
             ("image", "layout.png", "합성 배치도: 교실 네 칸"),
             ("p", "그림 1. 학교 배치도(합성)"),
-            ("p", "그림 속 글자는 파서가 텍스트로 추출하지 않는다."),
+            ("p", "그림 속 글자는 파서가 텍스트로 추출하지 않는다.", "합성 각주: 이미지 내용은 따로 판독한다."),
         ],
     },
     "metadata_placeholder": {
         "title": PLACEHOLDER,
-        "bookmark": PLACEHOLDER,
+        "bookmark": "여기에 제목 입력",
         "blocks": [
             ("p", "가상중학교 학부모 안내"),
             ("p", "겨울방학 방과후 수업 신청을 받습니다."),
@@ -109,6 +109,7 @@ FIXTURES = {
             ("p", "양식 작성 요령"),
             ("p", PLACEHOLDER),
             ("p", "위 칸에는 실제 내용을 적는다."),
+            ("p", "작성자: ________"),
         ],
     },
 }
@@ -181,11 +182,16 @@ def _table_grid(header, rows):
 
 
 def _content(spec):
-    body, images, tno = [], [], 0
+    body, images, tno, notes = [], [], 0, 0
     for block in spec["blocks"]:
         kind = block[0]
         if kind == "h":
             body.append(f'<text:h text:outline-level="{block[1]}">{_runs(block[2])}</text:h>')
+        elif kind == "p" and len(block) > 2:
+            notes += 1
+            body.append(f'<text:p text:style-name="Standard">{_runs(block[1])}<text:note text:id="ftn{notes}" '
+                        f'text:note-class="footnote"><text:note-citation>{notes}</text:note-citation>'
+                        f'<text:note-body>{_p(block[2])}</text:note-body></text:note></text:p>')
         elif kind == "p":
             body.append(_p(block[1]))
         elif kind == "textbox":
@@ -262,11 +268,14 @@ def _manifest(images):
 
 def reference_markdown(spec):
     """이상적인 파싱 결과. 병합 셀이 있는 표는 HTML, 없으면 파이프 표. 이미지는 대체텍스트만 남긴다."""
-    lines = []
+    lines, notes = [], []
     for block in spec["blocks"]:
         kind = block[0]
         if kind == "h":
             lines.append("#" * block[1] + " " + block[2])
+        elif kind == "p" and len(block) > 2:
+            notes.append(block[2])
+            lines.append(f"{block[1]}[^{len(notes)}]")
         elif kind == "p":
             lines.append(block[1])
         elif kind == "textbox":
@@ -293,6 +302,7 @@ def reference_markdown(spec):
                 for row in t["rows"]:
                     lines.append("| " + " | ".join("<br>".join(_paras(_cell(c)[0])) for c in row) + " |")
         lines.append("")
+    lines.extend(f"[^{i}]: {t}\n" for i, t in enumerate(notes, 1))
     return "\n".join(lines)
 
 
@@ -304,6 +314,8 @@ def build(name, out_dir):
         def put(arc, data, method=zipfile.ZIP_DEFLATED):
             info = zipfile.ZipInfo(arc, ZIP_TIME)
             info.compress_type = method
+            info.create_system = 3
+            info.external_attr = 0o644 << 16
             zf.writestr(info, data)
         put("mimetype", "application/vnd.oasis.opendocument.text", zipfile.ZIP_STORED)
         put("content.xml", content)

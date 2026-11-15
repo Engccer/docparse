@@ -120,9 +120,57 @@ def test_images_are_reported_separately_from_text_verdict(fx):
     md = "\n".join(l for l in ref(fx, "image_caption").splitlines() if not l.startswith("!["))
     r = check(fx, "image_caption", md)
     assert r["verdict"] == "PASS"
-    assert r["images"] == {"embedded": 1, "output_refs": 0, "status": "not_extracted"}
+    assert r["images"] == {"embedded": 1, "output_refs": 0, "extracted_refs": 0, "status": "not_extracted"}
     assert "미추출" in V.render(r)
     assert check(fx, "gongmun", ref(fx, "gongmun"))["images"]["status"] == "none"
+
+
+def test_reference_to_path_inside_odt_is_not_extraction(fx):
+    """Pandoc은 이미지를 꺼내지 않고 ODT 안 경로만 가리킨다."""
+    r = check(fx, "image_caption", ref(fx, "image_caption"))
+    assert r["images"]["output_refs"] == 1 and r["images"]["status"] == "not_extracted"
+    md = ref(fx, "image_caption").replace("(Pictures/layout.png)", "(media/layout.png)")
+    assert check(fx, "image_caption", md)["images"]["status"] == "referenced"
+
+
+def test_footnote_body_is_checked_for_presence_not_position(fx):
+    r = check(fx, "image_caption", ref(fx, "image_caption"))
+    assert r["verdict"] == "PASS" and r["notes"] == 1
+    md = ref(fx, "image_caption").replace("[^1]: 합성 각주: 이미지 내용은 따로 판독한다.", "")
+    assert check(fx, "image_caption", md)["missing"] == ["합성 각주: 이미지 내용은 따로 판독한다."]
+
+
+def test_printed_footer_is_not_a_duplicate(fx):
+    md = ref(fx, "gongmun") + "\n가상시 교육지원청 내부 문서\n\n가상시 교육지원청\n"
+    r = check(fx, "gongmun", md)
+    assert r["verdict"] == "PASS", r
+    assert all(h["in_output"] for h in r["header_footer"])
+
+
+def test_underscore_blanks_match_raw_and_escaped(fx):
+    md = ref(fx, "placeholder_in_body")
+    assert check(fx, "placeholder_in_body", md)["verdict"] == "PASS"
+    escaped = md.replace("________", "\\_" * 8)
+    assert check(fx, "placeholder_in_body", escaped)["verdict"] == "PASS"
+
+
+@pytest.mark.parametrize("link", ["<office@example.com>", "[office@example.com](mailto:office@example.com)",
+                                  '<a href="mailto:office@example.com">office@example.com</a>'])
+def test_links_in_contact_line_are_normalized(fx, link):
+    md = ref(fx, "gongmun").replace("office@example.com", link)
+    assert check(fx, "gongmun", md)["verdict"] == "PASS"
+
+
+def test_table_cell_spacing_difference_is_reported_not_failed(fx):
+    md = ref(fx, "gongmun").replace("| 1차 회의 |", "| 1차회의 |")
+    r = check(fx, "gongmun", md)
+    assert r["verdict"] == "PASS"
+    assert [(t["table"], t["row"]) for t in r["spacing_rows"]] == [(1, 2)]
+
+
+def test_bookmark_name_leak_fails(fx):
+    md = "여기에 제목 입력\n\n" + ref(fx, "metadata_placeholder")
+    assert [m["text"] for m in check(fx, "metadata_placeholder", md)["metadata_leaks"]] == ["여기에 제목 입력"]
 
 
 def test_spacing_only_difference_is_reported_not_failed(fx):
