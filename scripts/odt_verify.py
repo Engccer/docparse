@@ -5,7 +5,8 @@
 
 검사(하나라도 걸리면 FAIL):
   - missing: 비어 있지 않은 문단(text:p·text:h의 자기 글. 글상자 안 문단은 따로 셈)이 출력에 없음
-  - order: 출력에 있지만 원본 읽기 순서와 어긋남(공백 뺀 6자 이상 문단만 순서를 본다)
+  - order: 출력에 있지만 원본 읽기 순서와 어긋남(공백 뺀 6자 미만 문단은 원본·출력에 각각 한 번만
+    나올 때만 순서를 본다)
   - duplicates: 원본(머리말·꼬리말 포함)보다 많이 나옴(공백 뺀 6자 이상 문단만)
   - table_rows: 표 한 행의 셀 글이 출력의 한 행(파이프 표 한 줄 또는 HTML <tr>)에 순서대로 모이지 않음
     (ODT가 반복 머리행으로 지정한 행이면 머리행으로 적는다)
@@ -17,7 +18,7 @@
   - images: 내장 이미지 수와 출력의 이미지 참조 수. ODT 안 경로(Pictures/…)만 가리키는 참조는
     추출로 보지 않는다. 텍스트 PASS와 별개로 "not_extracted"를 표시한다.
 각주 본문은 파서가 문서 끝으로 옮기므로 존재만 보고 순서는 보지 않는다.
-한계: 포함 비교라 짧은 문단은 다른 글 속에 우연히 들어 있으면 누락을 놓칠 수 있다.
+한계: 포함 비교라 짧은 문단은 다른 글 속에 우연히 들어 있으면 누락·순서 어긋남을 놓칠 수 있다.
 
 Usage:
     python odt_verify.py <원본.odt> <출력.md> [--json]
@@ -52,7 +53,7 @@ HTML_TAG = re.compile(r"</?(?:table|thead|tbody|tfoot|tr|td|th|br|p|div|span|img
 MD_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 AUTOLINK = re.compile(r"<((?:https?://|mailto:)?[^<>\s]+@[^<>\s]+|https?://[^<>\s]+)>")
-FOOTNOTE_MARK = re.compile(r"\[\^[^\]\s]+\]:?")
+FOOTNOTE_MARK = re.compile(r"\[\^[^\]\s]+\]:?|[¹²³⁰⁴-⁹]+")
 MD_ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|<>~])")
 IMAGE_REF = re.compile(r"!\[[^\]]*\]\(\s*<?([^)\s>]*)|<img\b[^>]*\bsrc\s*=\s*[\"']?([^\"'\s>]*)", re.I)
 ORDER_MIN = DUP_MIN = 6
@@ -227,7 +228,7 @@ def verify(odt_path, md_text):
         if p not in out:
             (spacing_only if nospace(p) in out_ns else missing).append(p)
             continue
-        if len(nospace(p)) < ORDER_MIN:
+        if len(nospace(p)) < ORDER_MIN and not (joined.count(p) == 1 and out.count(p) == 1):
             continue
         found = out.find(p, cursor)
         if found < 0:
@@ -295,7 +296,7 @@ def render(r):
     if img["status"] == "not_extracted":
         lines.append(f"  이미지: 내장 {img['embedded']}개 미추출(텍스트 판정과 별개. 이미지 내용은 따로 판독)")
     elif img["status"] == "referenced":
-        lines.append(f"  이미지: 내장 {img['embedded']}개, 출력 참조 {img['extracted_refs']}개(내용 일치는 미검증)")
+        lines.append(f"  이미지: 내장 {img['embedded']}개, 출력 참조 {img['extracted_refs']}개(내용 일치는 미검증. 이미지 내용은 따로 판독)")
     return "\n".join(lines)
 
 

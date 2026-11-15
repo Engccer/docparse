@@ -224,3 +224,23 @@ def test_assess_reports_embedded_images(fx, tmp_path):
     signals = {"embedded_images": 1}
     hints = A.rule_hints("odt", "odt", True, False, signals, "ko")
     assert any("내장 이미지 1개" in h for h in hints)
+
+
+def test_short_unique_paragraphs_keep_order_check(fx):
+    """짧은 문단도 원본·출력에 한 번씩만 나오면 순서를 본다(제목 자리 바꿈 검출)."""
+    md = ref(fx, "gongmun").replace("(경유)\n", "")
+    md = md.rstrip("\n") + "\n\n(경유)\n"
+    r = check(fx, "gongmun", md)
+    assert r["verdict"] == "FAIL" and r["order"] and not r["missing"]
+
+
+def test_superscript_footnote_marker_is_normalized(fx):
+    md = ref(fx, "image_caption").replace("않는다.[^1]", "않는다.¹").replace("[^1]: ", "¹ ")
+    assert check(fx, "image_caption", md)["verdict"] == "PASS"
+
+
+def test_placeholder_image_ref_still_prompts_visual_check(fx):
+    md = ref(fx, "image_caption").replace("(Pictures/layout.png)", "(img-0.jpeg)")
+    r = check(fx, "image_caption", md)
+    assert r["images"]["status"] == "referenced"
+    assert "따로 판독" in V.render(r)
