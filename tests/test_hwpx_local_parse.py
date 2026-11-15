@@ -131,3 +131,30 @@ def test_underline_conversion_error_keeps_plain(tmp_path, monkeypatch, capsys):
     code, md = run_main(monkeypatch, make_hwpx(tmp_path / "exam.hwpx"))
     assert code == 0 and "<u>" not in md
     assert "밑줄 보존 변환 실패" in capsys.readouterr().out
+
+
+@needs_underline
+def test_backslash_before_underline_span_still_counts_real_blank(tmp_path, monkeypatch, capsys):
+    """원문 끝 `\\` + 밑줄 구간 첫 `_`는 plain에서만 `\\_`로 붙는다. 진짜 빈칸 1칸을 상쇄하면 안 된다."""
+    body = (
+        "<hp:p>" + run(0, "x\\") + run(1, "_y") + run(0, " 끝") + "</hp:p>"
+        "<hp:p>" + run(0, "답: ") + run(1, " ") + run(0, " 쓰시오.") + "</hp:p>"
+    )
+    _, md = run_main(monkeypatch, make_hwpx(tmp_path / "doc.hwpx", body=body))
+    assert "자동으로 켰" in capsys.readouterr().out and "<u>" in md
+
+
+@needs_underline
+def test_guard_warning_not_carried_to_plain(tmp_path, monkeypatch, capsys):
+    real = hwpx_tomd.convert
+
+    def lossy(filepath, *, underline=False, **kw):
+        res = real(filepath, underline=underline, **kw)
+        if underline:
+            res.warnings.append("밑줄 표시가 렌더링 중 누락되었습니다: 밑줄 글자 2자. 확인하세요.")
+        return res
+
+    monkeypatch.setattr(hwpx_tomd, "convert", lossy)
+    code, md = run_main(monkeypatch, make_hwpx(tmp_path / "doc.hwpx", body=SPAN_ONLY))
+    assert code == 0 and "<u>" not in md
+    assert "밑줄 표시가" not in capsys.readouterr().out

@@ -71,9 +71,11 @@ def choose_underline(convert, filename, plain, forced, **opts):
     try:
         ul = convert(filename, underline=True, **opts)
     except Exception as e:  # noqa: BLE001 - 밑줄은 선택 기능이라 본 변환 결과를 지킨다
-        print(f"경고: 밑줄 보존 변환 실패로 밑줄 없이 저장합니다: {e}")
+        print(f"경고: 밑줄 보존 변환 실패로 밑줄 없이 진행합니다: {e}")
         return plain
-    blanks = ul.markdown.count(UNDERLINE_BLANK) - plain.markdown.count(UNDERLINE_BLANK)
+    # <u> 태그를 지우고 센다: 원문 끝 `\`와 다음 밑줄 구간 첫 `_`가 plain에서만 `\_`로 붙는 경우를 맞춘다
+    ul_text = ul.markdown.replace("<u>", "").replace("</u>", "")
+    blanks = ul_text.count(UNDERLINE_BLANK) - plain.markdown.count(UNDERLINE_BLANK)
     if forced or blanks > 0:
         if not forced:
             print(f"[알림] 밑줄 빈칸 {blanks}칸 발견: 밑줄 보존을 자동으로 켰습니다(밑줄 <u>…</u>, 빈칸 \\_).")
