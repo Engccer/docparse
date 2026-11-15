@@ -37,6 +37,7 @@ import json
 import os
 import re
 import sys
+import zipfile
 
 
 SUPPORTED_FORMATS = {
@@ -270,6 +271,15 @@ def recommend_parsers(fmt, tier, has_text_layer, table_hint, lang="ko"):
     return parsers
 
 
+def odt_embedded_images(file_path):
+    """ODT zip 안 Pictures/ 항목 수. zip이 아니면 None(진단 불가)."""
+    try:
+        with zipfile.ZipFile(file_path) as zf:
+            return sum(1 for n in zf.namelist() if n.startswith("Pictures/") and not n.endswith("/"))
+    except (OSError, zipfile.BadZipFile):
+        return None
+
+
 def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None):
     """진단만으로 걸리는 tier-rules 절 이름. 걸리지 않은 절은 적지 않는다(해당 없음 ≠ 미판정).
 
@@ -295,6 +305,8 @@ def rule_hints(fmt, tier, has_text_layer, table_hint, signals, lang, pages=None)
     if fmt == "odt":
         hints.append("ODT: Pandoc 단독 변환은 표·상하단 정보를 조용히 빠뜨린다(content.xml 문단 전수 대조 필수)")
         hints.append("ODT: meta.xml dc:title·북마크 안내문이 본문 첫 줄에 섞이는지 검사")
+        if signals.get("embedded_images"):
+            hints.append(f"ODT: 내장 이미지 {signals['embedded_images']}개. 파서는 텍스트만 추출하므로 이미지 내용은 따로 판독(odt_verify.py가 미추출로 구분 보고)")
     if lang != "ko":
         hints.append("비한국어 문서 조건 정밀화")
     return hints
@@ -360,6 +372,7 @@ def main():
             result["tier"] = "docx"
         elif fmt == "odt":
             result["tier"] = "odt"
+            result["signals"]["embedded_images"] = odt_embedded_images(file_path)
         elif size_mb < 5:
             result["tier"] = "small"
         else:

@@ -7,7 +7,7 @@ description: >
   (3) 여러 파서 결과를 조합/퓨전하려 할 때 (4) PDF, 이미지, HWP, DOCX 등 문서에서
   텍스트를 추출할 때
 metadata:
-  version: "1.8.1"
+  version: "1.9.0"
 ---
 
 # DocParse v3: 적응형 파싱 + Primary+Patch 퓨전
@@ -57,6 +57,8 @@ metadata:
 | `generate_alt_text.py` | 시각장애인 접근성 alt text 자동 생성 (PyMuPDF + Gemini Vision, 한국어 상세화). 실패·미매핑 placeholder는 원문 유지 + 종료 코드 1 |
 | `extract_vision_drafts.py` | 캐스케이드 ②단계: `_gvision.md`에서 페이지별 영어 드래프트(라틴 포함·한글 미포함 라인)+저신뢰 목록을 `draft_pNN.txt`로 추출. Claude repair 입력 |
 | `hwpx_enrich.py` | HWPX 결정론 보강: hwpx-tomd 출력에 **개요 스타일→`#` 제목**, **취소선 `~~`·강조색 `<mark>`**(charPr), **인쇄 PDF 실제 쪽 `<!-- p.N -->`**(pdftotext 쪽 텍스트와 전역 LIS 정렬), 간지·머리말 잔재 삭제를 문단 단위 정확 일치로만 입힌다 |
+| `odt_verify.py` | ODT 결과 검증: 원본 `content.xml` 문단을 출력과 전수 대조(누락·읽기 순서·중복·표 행 대응·머리행 표시·`meta.xml` 안내문 혼입). 띄어쓰기 차이·머리말·꼬리말·내장 이미지 미추출은 판정과 별개로 보고. PASS 0, FAIL 1 |
+| `make_odt_fixtures.py` | 공개 가능한 합성 ODT 회귀 자료 생성(실명·실제 기관 없음, 결정론적). 머리행·병합 셀 표, 공문 상하단·글상자·머리말, 이미지, 메타데이터 안내문 5종과 각 기준 마크다운 |
 | `apply_corrections.py` | **정본 수정 목록 CSV** 적용기: 오탈자·개인정보·표기 정규화를 손으로 고치지 않고 CSV(문서·원본 쪽·원문·수정문·유형·처리·근거)로 적용·검증(원문 0회면 오류, 치환 후 잔존 검사, 원본 쪽 자동 채움). 정본을 재생성해도 같은 CSV로 같은 결과 |
 
 > **평가 도구는 `parser-eval` 스킬 소관**: 파서끼리 견주고 등급을 매기고 그 판정을 장부에 남기는 일, `score_transcription.py`(정본 대비 CER/WER 정량 채점)와 `diff_fidelity.py`(LLM ↔ OCR 발산 토큰 → 육안 판독 표적)는 그 스킬에 있다. ⚠️ **`parser-eval`은 저자 로컬 스킬이라 docparse와 함께 배포되지 않고, 모든 머신에 있지도 않다** — 없으면 두 스크립트를 쓰는 단계는 tier-rules에 적힌 대체 경로로 한다. 파싱 방법과 프롬프트는 docparse가 정본이다.
@@ -125,7 +127,7 @@ JSON에서 `tier`, `pages`, `has_text_layer`, `table_hint`, `format` 확인 → 
 | **hwpx** | HWPX 파일 | hwpx_local(로컬·무료) 우선, 이미지·레이아웃 중요 시 Upstage 교차/대체 | hwpx_local |
 | **xlsx** | XLSX 파일 | xlsx_local(로컬·무료) 우선, 검증 실패·차트 텍스트 중요 시 Upstage·LlamaParse | xlsx_local |
 | **docx** | DOCX 파일 | docx_local(로컬·무료) 우선, 거부(텍스트박스·각주 등) 시 Upstage·LlamaParse | docx_local |
-| **odt** | ODT 파일 | OpenAI 직접 입력(텍스트 보존 실측 1건) + Mistral 본문 교차(표 머리행 소실). Pandoc 단독 변환 금지(표·상하단 정보 누락), 결과를 content.xml 문단과 전수 대조 | openai |
+| **odt** | ODT 파일 | OpenAI 직접 입력(텍스트 보존 실측 1건) + Mistral 본문 교차(표 머리행 소실). Pandoc 단독 변환 금지(표·글상자·상하단 정보 누락), 결과를 `odt_verify.py`로 content.xml 문단과 전수 대조 | openai |
 | **small** | PDF ≤15p | Gemini 단독 | Gemini |
 | **medium** | PDF 16~60p | LlamaParse v2 + Upstage | LlamaParse v2 |
 | **large** | PDF 61~100p | LlamaParse v2 + ODL | LlamaParse v2 |
@@ -144,7 +146,7 @@ small~xlarge의 쪽수는 텍스트 레이어가 있는 PDF 기준이다. 스캔
 
 **Office 로컬 티어 (XLSX·DOCX)**: XLSX·DOCX는 셀 값·병합 범위·헤딩 스타일이 파일 XML에 명시된 포맷이라 Tier 0 철학(원본이 명시적이면 LLM 추론은 하방 위험)이 그대로 적용된다. `xlsx_local_parse.py`(openpyxl + 원시 XML 값 멀티셋 교차 검증)·`docx_local_parse.py`(python-docx + document.xml 전수 recall 대조)를 먼저 쓰고, **PASS면 그대로 채택**(`_fused_v3_xlsxlocal.md`/`_fused_v3_docxlocal.md`, Step 5·6 생략, Step 7 최종 점검은 한다). 거부(검증 불일치·텍스트박스·각주·중첩 표) 시 Upstage·LlamaParse로 승격한다. 근거·경계는 tier-rules 「XLSX·DOCX」 절.
 
-**ODT**: 로컬 파서가 없고, Mistral은 표 머리행을 빠뜨려 본문 텍스트 교차에만 쓸 수 있다. 표·구조의 검증 상대가 없으므로 **원본 `content.xml`의 비어 있지 않은 말단 `text:p` 문단을 공백 정규화해 출력과 전수 대조**하고(문단 내용·표 셀 대응·읽기 순서·중복까지), PASS면 `_fused_v3_openai.md`로 채택한다. 이 대조가 Step 5·6을 대신하고 Step 9a의 "3종째 파서" 요구는 해당 없다(시각 판독이 필요하면 LibreOffice로 PDF 변환 뒤 Read). 첫 줄의 `dc:title` 안내문 혼입·빈 셀 `-` 채움·결재표 재배치는 대조로 잡히지 않으니 Step 7에서 본다. 근거·경계는 tier-rules 「비PDF 문서 포맷별 파서 선택」 ODT 행.
+**ODT**: 로컬 파서가 없고, Mistral은 표 머리행을 빠뜨려 본문 텍스트 교차에만 쓸 수 있다. 표·구조의 검증 상대가 없으므로 **원본 `content.xml`의 비어 있지 않은 문단을 공백 정규화해 출력과 전수 대조**하고(`python <스킬루트>/scripts/odt_verify.py <원본.odt> <출력.md>`: 문단 내용·표 셀 대응·읽기 순서·중복·`dc:title` 안내문 혼입), PASS면 `_fused_v3_openai.md`로 채택한다. 이 대조가 Step 5·6을 대신하고 Step 9a의 "3종째 파서" 요구는 해당 없다(시각 판독이 필요하면 LibreOffice로 PDF 변환 뒤 Read). 빈 셀 `-` 채움·결재표 재배치는 대조로 잡히지 않으니 Step 7에서 보고, 보고의 "이미지 미추출" 줄이 있으면 이미지 내용을 따로 판독한다. 대조 게이트 자체는 합성 ODT 5종(`make_odt_fixtures.py`)으로 회귀 시험되지만 OpenAI 출력 품질 실측은 실제 공문 1건이다. 근거·경계는 tier-rules 「비PDF 문서 포맷별 파서 선택」 ODT 행.
 
 **Primary 선택 원칙**: 자동화로 교정 불가능한 결함이 적은 파서를 Primary로. LlamaParse v2가 medium~xlarge 최적 (목차 정리, 표 열 정확, 노이즈 0건, LaTeX 0건). 크레딧 부족 시 ODL Primary + Upstage 교차검증으로 폴백(텍스트 레이어가 있을 때. 스캔본은 tier-rules 「텍스트 레이어 없음」). **Mistral ocr-4는 헤딩 구조를 생성해 텍스트PDF 폴백 Primary 후보**이나, 노이즈·OCR 글자 드리프트 후처리가 전제다(tier-rules 「Mistral ocr-4 헤딩 생성」).
 

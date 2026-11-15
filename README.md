@@ -37,7 +37,7 @@
 | **hwpx** | HWPX 파일 | hwpx_local 우선, 이미지/레이아웃 중요 시 Upstage 교차검증 | hwpx_local |
 | **xlsx** | XLSX 파일 | xlsx_local 우선, 검증 실패·차트 텍스트 중요 시 승격 | xlsx_local |
 | **docx** | DOCX 파일 | docx_local 우선, 거부(텍스트박스·각주 등) 시 승격 | docx_local |
-| **odt** | ODT 파일 | OpenAI 직접 입력 + Mistral 본문 교차, 결과를 content.xml과 대조(Pandoc 단독 변환은 표·상하단 누락) | openai |
+| **odt** | ODT 파일 | OpenAI 직접 입력 + Mistral 본문 교차, 결과를 `scripts/odt_verify.py`로 content.xml과 대조(Pandoc 단독 변환은 표·글상자·상하단 누락) | openai |
 | **small** | PDF 15페이지 이하 | Gemini 단독 | Gemini |
 | **medium** | PDF 16~60페이지 | LlamaParse v2 + Upstage | LlamaParse v2 |
 | **large** | PDF 61~100페이지 | LlamaParse v2 + OpenDataLoader | LlamaParse v2 |
@@ -110,7 +110,7 @@ python parsers/docx_local_parse.py input.docx     # 로컬, 무료, DOCX 전용
 python parsers/opendataloader_parse.py input.pdf  # 로컬, 무료, Java 필요
 ```
 
-경로 없이 실행하면 현재 디렉터리에서 지원 파일을 자동 탐지합니다(`cohere`·`openai`·`gvision`은 경로 필수). 출력은 입력 옆에 `<name>_<service>.md` 형식으로 기록됩니다(예: `input_upstage.md`). 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이며, 오류·빈 결과·검증 실패·부분 결과는 출력 없이 1로 끝나고 실행 시작 시 같은 이름의 이전 출력을 지웁니다. 보조 스크립트는 `scripts/` 아래에 있습니다(`assess_document.py`, `compare_outputs.py`, `normalize_odl.py` 등).
+경로 없이 실행하면 현재 디렉터리에서 지원 파일을 자동 탐지합니다(`cohere`·`openai`·`gvision`은 경로 필수). 출력은 입력 옆에 `<name>_<service>.md` 형식으로 기록됩니다(예: `input_upstage.md`). 모든 파서는 **출력 파일을 만들었을 때만 종료 코드 0**이며, 오류·빈 결과·검증 실패·부분 결과는 출력 없이 1로 끝나고 실행 시작 시 같은 이름의 이전 출력을 지웁니다. 보조 스크립트는 `scripts/` 아래에 있습니다(`assess_document.py`, `compare_outputs.py`, `normalize_odl.py`, ODT 대조용 `odt_verify.py`·`make_odt_fixtures.py` 등).
 
 ## 이식성 (코딩 에이전트 호환)
 
