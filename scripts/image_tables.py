@@ -14,7 +14,8 @@
 
 픽셀을 얻는 방법: 이미지를 xref에서 직접 꺼내지 않고 쪽을 렌더한다(CMYK·Separation JPEG를 직접
 꺼내면 색이 반전되는 경우가 있었다). 가로·세로 배율을 원본 화소 수 / bbox 크기로 따로 잡고 bbox 왼쪽
-위가 화소 원점에 오게 옮겨, 원본 화소와 1:1로 맞는 픽셀을 얻는다(rendered_px = native_px). 균일
+위가 화소 원점에 오게 옮겨, 원본 화소와 1:1로 맞는 픽셀을 얻는다(rendered_px = native_px, 90도 돌아 놓인
+이미지는 가로·세로를 맞바꾼 값). 균일
 배율로 렌더하면 bbox가 화소 사이에 걸려 반 화소 어긋나게 다시 보간되어 흐려진다.
 겹친 이미지(전면 배경 위 표 이미지 등)에서 쪽 위 자리가 80% 이상 겹치는 격자는 더 작은 이미지의
 것 하나만 남긴다. 쪽 면적의 --min-share보다 작은 이미지는 건너뛰되 그 수를 적고, 맞닿은 작은
@@ -46,7 +47,8 @@
   - 머리글: 본문 단위 행 높이의 정수배 간격이 맨 아래까지 이어지기 시작하는 전폭 경계선을 본문 시작으로
     보고(괘선이 빠지면 본문 간격이 2배·3배로 보이므로), 격자 위쪽부터 거기까지를 머리글 띠로 저장한다.
     둘째 띠부터는 머리글 띠를 빨간 구분 막대와 함께 띠 위에 붙여 띠 하나만 봐도 열 뜻을 알 수 있게
-    한다. 추정에 실패하면 머리글 띠를 만들지 않는다. --header-rows N은 모든 격자에, --header-rows
+    한다. 간격으로 못 정하면 첫 선 아래 짧은 선(병합 머리글 아래 선)만 이어지다 처음 나온 전폭선을 머리글
+    끝으로 본다. 그래도 실패하면 머리글 띠를 만들지 않는다. --header-rows N은 모든 격자에, --header-rows
     p025.g00=5는 그 격자에만 직접 준다(여러 번 줄 수 있다).
 
 같은 --out 폴더에 다시 돌리면 처리하는 쪽의 pNNN.*.png를 먼저 지우고, 기존 manifest.json에서 그 쪽만
@@ -472,7 +474,35 @@ def estimate_header_rows(row_lines, full_lines=None):
     선으로 맞춘다. 머리글 안의 선은 병합 칸 때문에 짧고, 머리글 끝 행이 마침 본문 행 높이와 같으면
     그 짧은 선에서 머리글이 끊기기 때문이다(실측). 본문 간격이 3개 미만, 시작이 0, 머리글이 격자 높이의
     35% 초과면 None.
+
+    간격으로 못 정했을 때 full_lines가 있으면 머리글 모양으로 한 번 더 본다: 첫 선 아래로 짧은 선(병합
+    머리글 아래 선)만 이어지다 처음 나온 전폭선을 머리글 끝으로 친다(_header_by_short_lines).
     """
+    start = _header_by_spacing(row_lines, full_lines)
+    if start is None and full_lines is not None:
+        start = _header_by_short_lines(row_lines, full_lines)
+    return start
+
+
+def _header_by_short_lines(row_lines, full_lines):
+    """첫 선 바로 아래부터 전폭이 아닌 선이 1개 이상 이어지고 처음 나온 전폭선의 번호. 못 정하면 None.
+
+    본문 묶음이 2개뿐인 짧은 표나 본문 괘선 간격이 제각각인 표는 간격으로 머리글을 못 정한다. 머리글
+    안의 선은 병합 칸 때문에 짧고 본문 경계선은 표 너비를 다 가로지르므로 그 경계를 쓴다. 첫 선부터
+    전폭선이면 근거가 없어 정하지 않는다. 그 아래 행 간격이 2개 미만이거나 머리글이 격자 높이의 절반을
+    넘으면 None.
+    """
+    n = len(row_lines) - 1
+    k = next((i for i in range(1, n + 1) if i in full_lines), None)
+    if k is None or k < 2 or n - k < 2:
+        return None
+    total = row_lines[-1] - row_lines[0]
+    if total <= 0 or row_lines[k] - row_lines[0] > 0.5 * total:
+        return None
+    return k
+
+
+def _header_by_spacing(row_lines, full_lines):
     gaps = [b - a for a, b in zip(row_lines, row_lines[1:])]
     n = len(gaps)
     if n < 4:
@@ -681,7 +711,8 @@ def page_images(page, fitz, min_share):
         tf = info.get("transform") or (1, 0, 0, 1, 0, 0)
         found.append(dict(xref=info.get("xref", 0), full=full, shown=shown,
                           native=[info["width"], info["height"]], dpi=dpi,
-                          axis_aligned=abs(tf[1]) < 1e-6 and abs(tf[2]) < 1e-6))
+                          axis_aligned=abs(tf[1]) < 1e-6 and abs(tf[2]) < 1e-6,
+                          quarter_turn=abs(tf[0]) < 1e-6 and abs(tf[3]) < 1e-6))
     found.sort(key=lambda i: (round(i["shown"].x0), round(i["shown"].y0)))
     return found, skipped
 
@@ -726,11 +757,13 @@ def render_image(page, fitz, im):
 
     이미지 bbox가 정수 화소 자리에 놓이게 가로·세로 배율을 따로 잡는다. 균일 배율로 렌더하면 bbox가
     화소 사이에 걸려 MuPDF가 반 화소 어긋나게 다시 보간하므로 조각이 원본보다 흐려진다(실측 선명도
-    약 22% 저하). 회전·기울여 놓인 이미지만 균일 배율로 렌더한다.
+    약 22% 저하). 90도 돌아 놓인 이미지(/Rotate 쪽의 회전을 없앤 뒤 흔하다)는 원본 세로 화소가 쪽 가로로
+    가므로 배율을 맞바꿔 잡는다. 그 밖의 각도로 기울여 놓인 이미지만 균일 배율로 렌더한다.
     """
     full = im["full"]
-    if im["axis_aligned"]:
-        sx, sy = im["native"][0] / full.width, im["native"][1] / full.height
+    if im["axis_aligned"] or im.get("quarter_turn"):
+        nx, ny = im["native"] if im["axis_aligned"] else im["native"][::-1]
+        sx, sy = nx / full.width, ny / full.height
         mat = fitz.Matrix(sx, 0, 0, sy, -full.x0 * sx, -full.y0 * sy)
     else:
         sx = sy = im["dpi"] / 72

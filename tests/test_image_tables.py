@@ -660,3 +660,77 @@ def test_dark_rows_with_faint_columns_keep_grid(gap):
             d.text((l + 40, t + 15), f"{r * 3 + c}.{c}", fill=0)
     grids = T.detect_grids(img, dpi=DPI)
     assert [(g["rows"], g["cols"]) for g in grids] == [(12, 6)]
+
+
+# ---------- 머리글 추정 보강(2026-11-23) ----------
+
+def test_header_from_short_header_lines_when_spacing_cannot_tell():
+    """간격으로 못 정해도, 격자 너비를 다 가로지르지 않는 선(병합 머리글 아래 짧은 선)만 이어지다 처음 나온
+    전폭선을 머리글 끝으로 본다. 본문이 묶음 2개뿐인 짧은 표(실측)."""
+    rl = [0, 19, 38, 57, 80, 158, 236]
+    assert T.estimate_header_rows(rl) is None  # 간격만으로는 본문 간격이 3개 미만이라 못 정한다
+    assert T.estimate_header_rows(rl, full_lines={0, 4, 5, 6}) == 4
+    # 첫 선부터 전폭선이면 머리글 안의 짧은 선이라는 근거가 없으므로 정하지 않는다
+    assert T.estimate_header_rows([0, 44, 93, 142, 190, 239, 288, 337, 370], full_lines=set(range(9))) is None
+    # 전폭선 아래 본문 간격이 2개 미만이거나 머리글이 격자 높이의 절반을 넘으면 정하지 않는다
+    assert T.estimate_header_rows([0, 19, 38, 57, 80, 158], full_lines={0, 4, 5}) is None
+    assert T.estimate_header_rows([0, 40, 80, 120, 160, 190, 220], full_lines={0, 4, 5, 6}) is None
+    # 간격으로 정해지는 표는 전과 같다
+    assert T.estimate_header_rows([0, 25, 40] + list(range(60, 241, 20)), full_lines={0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}) == 3
+
+
+def test_short_table_with_merged_header_gets_header_band():
+    """머리글 3단(병합 칸 아래 짧은 선 2개) + 본문 묶음 2개(글자 3줄마다 괘선)인 표의 머리글을 추정한다."""
+    img = Image.new("L", (760, 340), 255)
+    d = ImageDraw.Draw(img)
+    xs = [20 + 120 * i for i in range(7)]
+    ys = [20, 45, 70, 95, 175, 255]
+    for y in (ys[0], ys[3], ys[4], ys[5]):
+        d.line([(xs[0], y), (xs[-1], y)], fill=0)
+    d.line([(xs[2], ys[1]), (xs[5], ys[1])], fill=0)  # 병합 머리글 아래(3칸)
+    d.line([(xs[3], ys[2]), (xs[5], ys[2])], fill=0)  # 그 아래 병합(2칸)
+    for x in (xs[0], xs[1], xs[2], xs[5], xs[6]):
+        d.line([(x, ys[0]), (x, ys[-1])], fill=0)
+    d.line([(xs[3], ys[1]), (xs[3], ys[-1])], fill=0)
+    d.line([(xs[4], ys[2]), (xs[4], ys[-1])], fill=0)
+    for top in (ys[3], ys[4]):
+        for i in range(3):
+            for l, r in zip(xs, xs[1:]):
+                d.rectangle([l + 30, top + 10 + 24 * i, l + 80, top + 18 + 24 * i], fill=0)
+    g = T.detect_grids(img, dpi=DPI)[0]
+    assert g["rows"] == 5 and g["cols"] == 6, (g["row_lines_px"], g["col_lines_px"])
+    hr, _, _ = T.plan_bands(g, 6, None)
+    assert hr == 3
+
+
+@pytest.mark.parametrize("rotation", [90, 270])
+def test_rotated_page_is_rendered_on_native_pixels(tmp_path, rotation):
+    """/Rotate 90·270 쪽: 회전을 없애면 이미지가 90도 돌아 놓이는데, 그래도 원본 화소와 1:1로 렌더한다
+    (가로·세로 화소 수가 바뀐 채 맞는다). 표는 쪽을 보이는 방향으로 센다."""
+    pymupdf = pytest.importorskip("pymupdf")
+    src_img = header_table_image()
+    buf = io.BytesIO()
+    src_img.convert("RGB").save(buf, format="PNG")
+    doc = pymupdf.open()
+    page = doc.new_page(width=612, height=792)
+    page.insert_image(pymupdf.Rect(36.3, 72.7, 36.3 + 460.8, 72.7 + 345.6), stream=buf.getvalue())
+    page.set_rotation(rotation)
+    path = tmp_path / f"rot{rotation}.pdf"
+    doc.save(path)
+    doc.close()
+    out = tmp_path / "o"
+    r = run(path, out, "--max-width", "10")
+    assert r.returncode == 0, r.stdout + r.stderr
+    m = manifest(out)
+    im = m["pages"][0]["images"][0]
+    assert im["native_px"] == [640, 480] and im["rendered_px"] == [480, 640]
+    g = m["pages"][0]["grids"][0]
+    assert (g["rows"], g["cols"]) == (6, 14) and g["scale"] == 1
+    turned = src_img.convert("RGB").transpose(Image.Transpose.ROTATE_270 if rotation == 90 else Image.Transpose.ROTATE_90)
+    x0, y0, x1, y1 = g["bbox_px"]
+    ref = turned.crop((max(0, x0 - 3), max(0, y0 - 3), min(480, x1 + 3), min(640, y1 + 3)))
+    from PIL import ImageChops, ImageStat
+    with Image.open(out / g["overview"]) as ov:
+        assert ov.size == ref.size
+        diff = ImageStat.Stat(ImageChops.difference(ov.convert("L"), ref.convert("L"))).mean[0]
+    assert diff < 1.0, diff
