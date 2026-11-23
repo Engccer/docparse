@@ -56,6 +56,29 @@ def test_fraction_spelling_is_one_value():
     assert V.normalize("32-3/4")[0] == V.normalize("32 3/4")[0]
 
 
+def test_normalize_cache_keeps_similar_strings_apart():
+    # 정규화 결과를 글자열 기준으로 캐시해도 비슷한 글자열끼리 섞이지 않고, 두 번 불러도 같다
+    seen = ["12", "１２", "12?", " 12 ", "1,5", "1.5", "1,500", "1-1/4", "1 1/4", "25¹", "251", "-", ""]
+    first = [V.normalize(v) for v in seen]
+    assert [V.normalize(v) for v in seen] == first
+    assert first[:3] == [("12", False), ("12", False), ("12", True)]
+    assert first[4] == first[5] == ("1.5", False) and first[6] == ("1,500", False)
+    assert first[9] != first[10]
+    assert V.normalize(None) == V.normalize("") and V.normalize(12) == V.normalize("12")
+
+
+def test_repeated_values_still_surface_disagreement():
+    # 같은 글자열이 여러 칸에 되풀이돼도 칸마다 따로 갈림을 가른다(정규화 캐시가 불일치를 숨기지 않음)
+    rows = [["6", "6", "6", "6"]] * 3
+    rep = V.vote({"a": {"g": grid(rows)},
+                  "b": {"g": grid([["6", "8", "6", "6"]] * 3)},
+                  "c": {"g": grid([["6", "6", "6", "6"]] * 3)}})
+    assert rep["summary"]["categories"]["unanimous"] == 9
+    assert rep["summary"]["categories"]["majority"] == 3
+    assert rep["summary"]["pairwise_diff"] == {"a|b": 3, "a|c": 0, "b|c": 3}
+    assert {(it["row"], it["col"]) for it in rep["review"]} == set()
+
+
 # ---- 칸 분류 ----
 
 def test_three_readings_majority():

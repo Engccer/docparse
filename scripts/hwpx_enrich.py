@@ -270,17 +270,27 @@ def align_top_paragraphs(lines, top_paras, report):
 # ----------------------------------------------------------------------------
 # PDF 쪽 정렬
 # ----------------------------------------------------------------------------
+def _page_record(p: int, t: str):
+    nonempty = [l.strip() for l in t.split("\n") if l.strip()]
+    last = nonempty[-1] if nonempty else ""
+    # 바닥글 문구 뒤("… 안내자료   5")나 앞("50   단위학교 …")의 번호도 인쇄 쪽 번호로 인정
+    m = re.search(r"(?:^|\s)(\d{1,4})$", last) or re.match(r"(\d{1,4})\s{2,}\S", last)
+    printed = int(m.group(1)) if m else None
+    return {"pdf": p, "printed": printed, "key": re.sub(r"[\W_]+", "", t)}
+
+
 def pdf_pages(pdf_path: str):
     n = int(re.search(r"Pages:\s+(\d+)", subprocess.run(["pdfinfo", pdf_path], capture_output=True, text=True).stdout).group(1))
+    # pdftotext를 한 번만 기동하고 \f(쪽 구분)로 나눈다. 쪽 수와 맞지 않으면 쪽별 호출로 되돌아간다.
+    whole = subprocess.run(["pdftotext", "-layout", pdf_path, "-"], capture_output=True, text=True).stdout
+    parts = whole.split("\f")
+    if len(parts) == n + 1 and parts[-1] == "":
+        # 쪽별 호출 결과는 끝에 \f가 붙어 있으므로 같은 문자열이 되도록 되붙인다
+        return [_page_record(p, parts[p - 1] + "\f") for p in range(1, n + 1)]
     pages = []
     for p in range(1, n + 1):
         t = subprocess.run(["pdftotext", "-f", str(p), "-l", str(p), "-layout", pdf_path, "-"], capture_output=True, text=True).stdout
-        nonempty = [l.strip() for l in t.split("\n") if l.strip()]
-        last = nonempty[-1] if nonempty else ""
-        # 바닥글 문구 뒤("… 안내자료   5")나 앞("50   단위학교 …")의 번호도 인쇄 쪽 번호로 인정
-        m = re.search(r"(?:^|\s)(\d{1,4})$", last) or re.match(r"(\d{1,4})\s{2,}\S", last)
-        printed = int(m.group(1)) if m else None
-        pages.append({"pdf": p, "printed": printed, "key": re.sub(r"[\W_]+", "", t)})
+        pages.append(_page_record(p, t))
     return pages
 
 
@@ -288,6 +298,11 @@ def page_label(pg, label_fn=None):
     if label_fn:
         return label_fn(pg)
     return str(pg["printed"]) if pg["printed"] else f"pdf{pg['pdf']}"
+
+
+_NONWORD_RX = re.compile(r"[\W_]+")
+_SEG_STRIP_RX = re.compile(r"</?mark>|~~|^#+\s*")
+_MARK_STRIP_RX = re.compile(r"</?mark>|~~")
 
 
 def assign_pages(lines, pages, report, heading_idx=frozenset(), min_len=10, key_len=16, heading_min_len=5):
@@ -300,40 +315,57 @@ def assign_pages(lines, pages, report, heading_idx=frozenset(), min_len=10, key_
     """
     import bisect
 
-    cands = []  # (line_idx, [page_idx...])
-    tried = 0
+    # 1) 줄마다 대표 키를 모은다
+    items = []  # (line_idx, key, is_heading)
     for i, line in enumerate(lines):
         if not line or line.startswith("<!--") or line.startswith("| --- "):
             continue
         cells = split_row(line)
         seg = line
         if cells is not None:
-            seg = max((c.split("<br>")[0] for c in cells), key=lambda c: len(re.sub(r"[\W_]+", "", c)), default="")
+            seg = max((c.split("<br>")[0] for c in cells), key=lambda c: len(_NONWORD_RX.sub("", c)), default="")
         is_heading = i in heading_idx
-        seg = re.sub(r"</?mark>|~~|^#+\s*", "", seg)
-        key = re.sub(r"[\W_]+", "", seg)
+        seg = _SEG_STRIP_RX.sub("", seg)
+        key = _NONWORD_RX.sub("", seg)
         if len(key) < (heading_min_len if is_heading else min_len):
             continue
-        key = key[:key_len]
-        tried += 1
-        hits = [k for k, pg in enumerate(pages) if key in pg["key"]]
+        items.append((i, key[:key_len], is_heading))
+    tried = len(items)
+    # 2) 줄 수 x 쪽 수 전수 부분문자열 검색 대신, 키 길이별로 쪽마다 그 길이의 조각 집합을 만들어 한 번에 대조한다.
+    #    쪽 번호는 쪽 순서대로 쌓이므로 오름차순이고, 쪽마다 한 번만 들어간다.
+    keys_by_len = defaultdict(set)
+    for _, key, _ in items:
+        keys_by_len[len(key)].add(key)
+    index = {}
+    for klen, wanted in keys_by_len.items():
+        for k, pg in enumerate(pages):
+            kt = pg["key"]
+            grams = {kt[x:x + klen] for x in range(len(kt) - klen + 1)}
+            for g in grams & wanted:
+                index.setdefault(g, []).append(k)
+    cands = []  # (line_idx, [page_idx...])
+    for i, key, is_heading in items:
+        hits = index.get(key, [])
         # 제목은 자기 쪽(과 목차)에만 있어야 한다. 3쪽 넘게 나오는 제목 문구는 장 머리글·부록 옆 탭이라 위치
         # 신호가 아니다(인사관리 「□ 보조공학기기 신청 서식」이 옆 탭 때문에 113쪽으로 붙던 문제) — 뒤 본문에서 상속.
         if hits and len(hits) <= (3 if is_heading else 12):
             cands.append((i, hits))
     # LIS(비감소) over candidates: 각 줄은 후보를 내림차순으로 넣어 같은 줄이 두 번 쓰이지 않게 한다
     tails = []  # (page, node_id)
+    tail_pages = []  # tails의 page만 병렬 유지(bisect용, 후보마다 리스트를 새로 만들지 않는다)
     nodes = []  # (line_idx, page, prev_node)
     for li, hits in cands:
         for pg in sorted(hits, reverse=True):
-            pos = bisect.bisect_right([t[0] for t in tails], pg)
+            pos = bisect.bisect_right(tail_pages, pg)
             prev = tails[pos - 1][1] if pos > 0 else -1
             nodes.append((li, pg, prev))
             nid = len(nodes) - 1
             if pos == len(tails):
                 tails.append((pg, nid))
+                tail_pages.append(pg)
             else:
                 tails[pos] = (pg, nid)
+                tail_pages[pos] = pg
     result = [None] * len(lines)
     found = 0
     nid = tails[-1][1] if tails else -1
@@ -371,8 +403,8 @@ def assign_pages(lines, pages, report, heading_idx=frozenset(), min_len=10, key_
         cells = split_row(line)
         seg = line
         if cells is not None:
-            seg = max((c.split("<br>")[0] for c in cells), key=lambda c: len(re.sub(r"[\W_]+", "", c)), default="")
-        key = re.sub(r"[\W_]+", "", re.sub(r"</?mark>|~~", "", seg))[:40]
+            seg = max((c.split("<br>")[0] for c in cells), key=lambda c: len(_NONWORD_RX.sub("", c)), default="")
+        key = _NONWORD_RX.sub("", _MARK_STRIP_RX.sub("", seg))[:40]
         chunks = [key[k:k + 8] for k in range(0, len(key) - 7, 8)]
         if len(chunks) < 2:
             continue  # 16자 미만 줄은 이웃을 따른다

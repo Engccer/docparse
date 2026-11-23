@@ -71,3 +71,59 @@ def test_underline_markup_detected():
     assert E.has_underline_markup(["앞", "(A) <u>밑줄</u> 뒤"])
     assert E.has_underline_markup(["I am \\_\\_\\_ to school."])
     assert not E.has_underline_markup(["~~취소~~ <mark>강조</mark>", "snake_case"])
+
+
+def test_assign_pages_short_heading_keys_and_repeated_grams():
+    """쪽 조각 색인은 전수 `key in 쪽키` 검색과 같은 쪽을 찾는다(짧은 제목 키, 한 쪽에 반복되는 조각 포함)."""
+    pages = [
+        page(1, "알파벳 문장이 길게 이어집니다 하나둘셋 알파벳 문장이 길게 이어집니다 하나둘셋"),  # 같은 조각이 한 쪽에 두 번
+        page(2, "짧은제목 그리고 베타 문장이 충분히 길게 이어집니다 넷다섯여섯"),
+        page(3, "감마 문장도 충분히 길게 이어집니다 일곱여덟아홉 짧은제목"),
+    ]
+    lines = [
+        "알파벳 문장이 길게 이어집니다 하나둘셋",
+        "짧은제목",  # 제목(5자 이상, key_len 미만): 2·3쪽에 나옴
+        "베타 문장이 충분히 길게 이어집니다 넷다섯여섯",
+        "감마 문장도 충분히 길게 이어집니다 일곱여덟아홉",
+        "어느 쪽에도 없는 문장이 길게 이어집니다 영영영",
+    ]
+    result = printed(E.assign_pages(lines, pages, {}, heading_idx={1}), pages)
+    assert result[:4] == [1, 2, 2, 3]
+
+
+class _Run:
+    def __init__(self, stdout):
+        self.stdout = stdout
+
+
+def _fake_subprocess(monkeypatch, n_pages, whole, per_page):
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        if cmd[0] == "pdfinfo":
+            return _Run(f"Pages:          {n_pages}\n")
+        if "-f" in cmd:
+            return _Run(per_page[int(cmd[cmd.index("-f") + 1]) - 1])
+        return _Run(whole)
+
+    monkeypatch.setattr(E.subprocess, "run", fake_run)
+    return calls
+
+
+def test_pdf_pages_runs_pdftotext_once_and_matches_per_page_result(monkeypatch):
+    per_page = ["첫 쪽 본문 내용\n   1\n\f", "둘째 쪽 본문 내용\n   2\n\f", "셋째 쪽 본문\n\f"]
+    calls = _fake_subprocess(monkeypatch, 3, "".join(per_page), per_page)
+    got = E.pdf_pages("x.pdf")
+    assert [c[0] for c in calls] == ["pdfinfo", "pdftotext"]  # 쪽마다 기동하지 않는다
+    assert calls[1] == ["pdftotext", "-layout", "x.pdf", "-"]
+    assert [p["printed"] for p in got] == [1, 2, None]
+    assert [p["key"] for p in got] == [re.sub(r"[\W_]+", "", t) for t in per_page]
+
+
+def test_pdf_pages_falls_back_to_per_page_calls_when_split_count_differs(monkeypatch):
+    per_page = ["첫 쪽\n   1\n\f", "둘째 쪽\n   2\n\f"]
+    calls = _fake_subprocess(monkeypatch, 2, "첫 쪽\n   1\n\f", per_page)  # 한 쪽만 나온 것처럼 어긋남
+    got = E.pdf_pages("x.pdf")
+    assert [c[0] for c in calls] == ["pdfinfo", "pdftotext", "pdftotext", "pdftotext"]
+    assert [p["printed"] for p in got] == [1, 2]

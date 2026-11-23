@@ -31,6 +31,7 @@
 import argparse
 import collections
 import csv
+import functools
 import itertools
 import json
 import pathlib
@@ -61,6 +62,11 @@ _VULGAR = "¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞"
 # 부호가 앞에 붙은 수(`+0-1/8`, `-1-1/4`)는 공차 표기일 수 있어 대분수로 보지 않는다.
 _MIXED = re.compile(r"(?<![\d/+\-±])(\d+)(?:-| - )(\d+/\d+)")
 _SCRIPT = {"<super>": "^%s", "<sub>": "_%s", "<circle>": "(%s)"}
+# normalize가 칸마다 쓰는 정규식은 한 번만 컴파일한다
+_VULGAR_GAP = re.compile(r"(\d)\s*([%s])" % _VULGAR)
+_SPACES = re.compile(r"\s+")
+_COMMA_NUM = re.compile(r"\d+,\d+")
+_COMMA_THOUSANDS = re.compile(r"\d+,\d{3}")
 
 
 class InputError(Exception):
@@ -76,25 +82,33 @@ def _mark_script(ch):
     return fmt % unicodedata.normalize("NFKC", ch) if fmt else ch
 
 
-def normalize(value):
-    """비교용 정규화. (정규화한 값, 끝에 `?` 표시가 있었는가)를 돌려준다."""
-    s = "" if value is None else str(value)
-    # NFKC가 `25¹`을 `251`로 접으므로 그 전에 첨자·원문자를 구별되는 표기로 바꾼다
-    s = "".join(_mark_script(c) if ord(c) > 127 else c for c in s)
-    # NFKC가 `1¼`을 `11⁄4`로 붙여 버리므로 분수 글자 앞에 먼저 띄어쓰기를 둔다
-    s = re.sub(r"(\d)\s*([%s])" % _VULGAR, r"\1 \2", s)
-    s = unicodedata.normalize("NFKC", s).replace("⁄", "/").translate(_DASHES)
+@functools.lru_cache(maxsize=1 << 16)
+def _normalize_str(s):
+    """normalize의 본체. 같은 글자열은 같은 결과라 캐시한다(결과가 튜플이라 공유해도 안전하다)."""
+    if not s.isascii():
+        # NFKC가 `25¹`을 `251`로 접으므로 그 전에 첨자·원문자를 구별되는 표기로 바꾼다
+        s = "".join(_mark_script(c) if ord(c) > 127 else c for c in s)
+        # NFKC가 `1¼`을 `11⁄4`로 붙여 버리므로 분수 글자 앞에 먼저 띄어쓰기를 둔다
+        s = _VULGAR_GAP.sub(r"\1 \2", s)
+        s = unicodedata.normalize("NFKC", s).replace("⁄", "/").translate(_DASHES)
+    # ASCII 글자열은 위 단계가 모두 항등이라 건너뛴다
     s = s.strip()
     uncertain = False
     while s.endswith("?"):
         s = s[:-1].rstrip()
         uncertain = True
-    s = re.sub(r"\s+", " ", s)
+    s = _SPACES.sub(" ", s)
     # 쉼표 소수점은 합치되, 쉼표 뒤가 정확히 3자리면 천 단위 구분일 수 있어 그대로 둔다
-    if re.fullmatch(r"\d+,\d+", s) and not re.fullmatch(r"\d+,\d{3}", s):
+    if "," in s and _COMMA_NUM.fullmatch(s) and not _COMMA_THOUSANDS.fullmatch(s):
         s = s.replace(",", ".")
-    s = _MIXED.sub(r"\1 \2", s)
+    if "-" in s:  # _MIXED는 대시가 있어야만 맞는다
+        s = _MIXED.sub(r"\1 \2", s)
     return s, uncertain
+
+
+def normalize(value):
+    """비교용 정규화. (정규화한 값, 끝에 `?` 표시가 있었는가)를 돌려준다."""
+    return _normalize_str("" if value is None else str(value))
 
 
 def _clean_raw(raw):
@@ -130,7 +144,11 @@ def classify_cell(values, families=None):
     계열이 하나뿐이면 다른 계열 판독이 다른 값을 냈을 때만 강등한다.
     판독 이름이 families에 없으면 그 이름 자체를 계열로 본다.
     """
-    normed = {name: normalize(v) for name, v in values.items()}
+    return _classify(values, {name: normalize(v) for name, v in values.items()}, families)
+
+
+def _classify(values, normed, families):
+    """classify_cell의 본체. normed({이름: normalize 결과})를 호출자가 이미 구했을 때 쓴다."""
     flags = []
     if any(unc for _, unc in normed.values()):
         flags.append("uncertain_mark")
@@ -300,7 +318,9 @@ def _vote_grid(gid, present, missing, families):
         rec["status"] = "insufficient_readings"
         return rec, [], []
 
-    norm = {n: [[normalize(c)[0] for c in row] for row in g["rows"]] for n, g in present.items()}
+    # 칸마다 정규화하지 않고 격자당 한 번만 한다. 뒤의 칸 분류와 쌍별 비교도 이 결과를 쓴다
+    normed = {n: [[normalize(c) for c in row] for row in g["rows"]] for n, g in present.items()}
+    norm = {n: [[c[0] for c in row] for row in rows] for n, rows in normed.items()}
     ref, maps, failed = _choose_alignment(present, norm)
     ref_shape = _shape(present[ref])
     if len(maps) < 2:
@@ -343,27 +363,30 @@ def _vote_grid(gid, present, missing, families):
                                "values": {n: raw}, "category": "unaligned", "flags": []})
 
     cells, consensus = [], []
+    lookup = {n: (dict(rows), dict(cols)) for n, (rows, cols) in maps.items()}
     for i in range(ref_shape[0]):
         crow = []
         for j in range(ref_shape[1]):
-            values = {}
-            for n, (rows, cols) in maps.items():
-                rmap, cmap = dict(rows), dict(cols)
+            values, nvals = {}, {}
+            for n, (rmap, cmap) in lookup.items():
                 if i in rmap and j in cmap:
-                    values[n] = present[n]["rows"][rmap[i]][cmap[j]]
-            res = classify_cell(values, families)
+                    k, kk = rmap[i], cmap[j]
+                    values[n] = present[n]["rows"][k][kk]
+                    nvals[n] = normed[n][k][kk]
+            res = _classify(values, nvals, families)
             if i in edge_rows or j in edge_cols:
                 res["flags"].append("alignment_edge")
                 res["consensus"], res["review"] = None, True
-            res.update(row=i, col=j, values=values)
+            res.update(row=i, col=j, values=values, normalized={n: v[0] for n, v in nvals.items()})
             cells.append(res)
             crow.append(res["consensus"])
         consensus.append(crow)
     rec["consensus"] = consensus
 
+    headers = [(present[n].get("header"), lookup[n][1]) for n in maps]
+
     def header_of(j):
-        for n, (_, cols) in maps.items():
-            h, cmap = present[n].get("header"), dict(cols)
+        for h, cmap in headers:
             if h and j in cmap and cmap[j] < len(h):
                 return h[cmap[j]]
         return None
@@ -401,7 +424,8 @@ def vote(readings, families=None):
     gids = sorted({gid for r in readings.values() for gid in r})
     cats = collections.Counter({c: 0 for c in CATEGORIES})
     flag_count = collections.Counter()
-    pair_diff = {"%s|%s" % p: 0 for p in itertools.combinations(names, 2)}
+    pair_keys = [(a, b, "%s|%s" % (a, b)) for a, b in itertools.combinations(names, 2)]
+    pair_diff = {key: 0 for _, _, key in pair_keys}
     grids, review, confirmed = {}, [], 0
     for gid in gids:
         present = {n: readings[n][gid] for n in names if gid in readings[n]}
@@ -412,10 +436,10 @@ def vote(readings, families=None):
             cats[c["category"]] += 1
             confirmed += c["consensus"] is not None
             flag_count.update(c["flags"])
-            normed = {n: normalize(v)[0] for n, v in c["values"].items()}
-            for a, b in itertools.combinations(names, 2):
+            normed = c["normalized"]
+            for a, b, key in pair_keys:
                 if a in normed and b in normed and normed[a] != normed[b]:
-                    pair_diff["%s|%s" % (a, b)] += 1
+                    pair_diff[key] += 1
             if c["review"]:
                 review.append({"grid": gid, "row": c["row"], "col": c["col"],
                                "row_label": c["row_label"], "column_header": c["column_header"],
