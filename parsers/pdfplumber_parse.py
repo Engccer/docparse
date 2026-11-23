@@ -22,7 +22,10 @@ HTML 표로 내고, 복원할 수 없으면(또는 text 전략이면) 경고 대
 빼고 한 번 더 시도한다. 쪽 여백의 장식 무늬가 쪽 전체를 덮는 가짜 격자로 잡히는 문서가
 있어서다. 한 방향으로만 이어진 도형은 굵은 점선 칸막이일 수 있어 빼지 않는다. 뺀 무늬가 주로
 재시도 표 안에 있거나(쪽 장식은 표 밖으로 이어진다), 뺀 도형이 한 칸 안에서 낱말과 낱말
-사이에 놓였으면 그 재시도는 쓰지 않는다. 회전된 쪽은 회전을 푼 사본으로 PyMuPDF 교차 대조를
+사이에 놓였거나, 무늬 안에서 3pt 이하로 이어져 선이 되는 도형 줄이 표 안에 있으면 그 재시도는 쓰지
+않는다. 3pt 넘는 간격으로 늘어놓은 작은 도형의 세로 점선이 한 칸 안을 지나며 양쪽에 낱말을 두면, 두
+엔진 모두 선으로 보지 못해 두 열을 합친 것이므로 실패로 닫는다. 출력할 표에서는 내용 없는 얇은 행·열
+(굵은 괘선의 양쪽 가장자리·대시 끝이 만든 틈)을 접는다. 회전된 쪽은 회전을 푼 사본으로 PyMuPDF 교차 대조를
 한다(회전 쪽에서 PyMuPDF가 낱말을 자르는 문제 회피). 낱말 상자가 행 경계선에 닿아 두 엔진의 위아래 칸
 배정만 갈린 경우는 실패로 치지 않고 출력 맨 위 주석으로 알린다.
 
@@ -69,6 +72,8 @@ SPAN_TOLERANCE_PT = 1  # 병합 칸이 다음 행·열 경계를 넘는지 볼 �
 # 주로 표 안에 있으면(_decor_inside_tables) 재시도를 버린다.
 DECOR_MIN_PT = 3
 DECOR_MAX_PT = 15
+# pdfplumber의 기본 join_tolerance·snap_tolerance. 같은 줄에서 이 간격 이하로 이어진 도형은 한 줄의 선으로 합쳐진다.
+JOIN_TOLERANCE_PT = 3
 
 
 def get_output_filename(input_file):
@@ -113,6 +118,22 @@ def _grid_to_markdown(grid, drop_empty_rows=False):
     return "\n".join(lines)
 
 
+def _grid_lines(table):
+    """표의 열 시작선과 행 시작선 끝에 표의 오른쪽·아래 끝을 붙인 (xs, ys). 시작하는 칸이 없는 열이 있으면 None."""
+    rows = table.rows
+    width = max((len(row.cells) for row in rows), default=0)
+    lefts = [None] * width
+    for row in rows:
+        for c, cell in enumerate(row.cells):
+            if cell is not None and (lefts[c] is None or cell[0] < lefts[c]):
+                lefts[c] = cell[0]
+    if any(x is None for x in lefts):
+        return None
+    cells = [cell for row in rows for cell in row.cells if cell is not None]
+    return (lefts + [max(cell[2] for cell in cells)],
+            [row.bbox[1] for row in rows] + [max(cell[3] for cell in cells)])
+
+
 def table_spans(table):
     """병합 칸의 범위를 칸 bbox에서 복원한다: {(r, c): (rowspan, colspan)}.
 
@@ -121,15 +142,11 @@ def table_spans(table):
     하나로 정확히 설명되지 않으면(표가 깨진 것) None을 돌려준다.
     """
     rows = table.rows
-    width = max((len(row.cells) for row in rows), default=0)
-    tops = [row.bbox[1] for row in rows]
-    lefts = [None] * width
-    for row in rows:
-        for c, cell in enumerate(row.cells):
-            if cell is not None and (lefts[c] is None or cell[0] < lefts[c]):
-                lefts[c] = cell[0]
-    if any(x is None for x in lefts):
+    lines = _grid_lines(table)
+    if lines is None:
         return None
+    lefts, tops = lines[0][:-1], lines[1][:-1]
+    width = len(lefts)
     spans = {}
     covered = {}
     for r, row in enumerate(rows):
@@ -151,6 +168,69 @@ def table_spans(table):
             if cell is None and (r, c) not in covered:
                 return None
     return spans
+
+
+def _thin_limit(table, words):
+    """빈 행·열을 얇다고 볼 두께(pt): 표 안 가장 작은 낱말의 높이와 DECOR_MAX_PT 가운데 작은 쪽.
+
+    글자 한 줄도 들어가지 않는 두께이고, 작은 도형(굵은 괘선·점선 대시)이 만들 수 있는 틈의 크기다.
+    표 안에 낱말이 없으면 0이다(얇은 빈 줄을 접지 않는다).
+    """
+    heights = [w["bottom"] - w["top"] for w in words
+               if _in_bbox((w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2, table.bbox)]
+    return min([DECOR_MAX_PT] + heights) if heights else 0
+
+
+def _fold_empty(table, grid, spans, limit):
+    """출력할 표에서 내용 없는 행·열을 접은 (격자, 병합 범위). 값과 칸 배정은 그대로다.
+
+    접는 줄은 두 가지다. (1) 모든 자리가 다른 줄에서 시작한 병합 칸에 덮인 줄: 그 줄에서 시작하는 칸이
+    없어 무엇을 빼도 잃는 것이 없다(점선 대시 끝이 행을 쪼갠 자리). (2) 모든 칸이 비었고 두께가 limit
+    미만인 줄: 굵은 괘선의 양쪽 가장자리나 대시의 폭이 만든 틈이다. limit 이상인 빈 줄은 일부러 비워 둔
+    양식 칸(서명란·빈 답란)일 수 있어 남긴다. 접은 줄을 지나던 병합 칸은 그만큼 범위가 준다.
+    """
+    lines = _grid_lines(table)
+    spans = spans or {}
+    if lines is None or (not spans and any(v is None for row in grid for v in row)):
+        return grid, spans or None
+    xs, ys = lines
+    width = len(xs) - 1
+
+    def blank(r, c):
+        return not (grid[r][c] or "").strip()
+
+    rows, cols = list(range(len(grid))), list(range(width))
+    changed = True
+    while changed:
+        changed = False
+        for c in list(cols):
+            if all(grid[r][c] is None for r in rows) or (
+                    all(blank(r, c) for r in rows) and xs[c + 1] - xs[c] < limit):
+                cols.remove(c)
+                changed = True
+        for r in list(rows):
+            if all(grid[r][c] is None for c in cols) or (
+                    all(blank(r, c) for c in cols) and ys[r + 1] - ys[r] < limit):
+                rows.remove(r)
+                changed = True
+    if not rows or not cols or (len(rows), len(cols)) == (len(grid), width):
+        return grid, spans or None
+
+    folded = [[None] * len(cols) for _ in rows]
+    new_spans = {}
+    for r0, row in enumerate(grid):
+        for c0, value in enumerate(row):
+            if value is None:
+                continue
+            rowspan, colspan = spans.get((r0, c0), (1, 1))
+            kept_rows = [i for i, r in enumerate(rows) if r0 <= r < r0 + rowspan]
+            kept_cols = [j for j, c in enumerate(cols) if c0 <= c < c0 + colspan]
+            if not kept_rows or not kept_cols:
+                continue  # 접힌 줄 안에만 있던 칸은 비어 있다
+            folded[kept_rows[0]][kept_cols[0]] = value
+            if len(kept_rows) > 1 or len(kept_cols) > 1:
+                new_spans[(kept_rows[0], kept_cols[0])] = (len(kept_rows), len(kept_cols))
+    return folded, new_spans or None
 
 
 def _grid_to_html(grid, spans):
@@ -268,31 +348,27 @@ def _is_decor(width, height, fill, stroke):
     return bool(fill) and not stroke and DECOR_MIN_PT <= min(width, height) and max(width, height) < DECOR_MAX_PT
 
 
-def _lattice(boxes):
-    """상자 (x0, top, x1, bottom) 목록에서 2차원 무늬들을 찾는다: 무늬마다 상자 번호 집합 하나.
+def _neighbours(boxes, vertical, max_gap):
+    """크기가 같은(가로·세로 1pt 이내) 상자가 같은 세로줄의 위아래(vertical) 또는 같은 가로줄의 좌우에
+    max_gap 이하 간격으로 놓인 쌍 [(i, k)]."""
+    lo, hi, a, b = (0, 2, 1, 3) if vertical else (1, 3, 0, 2)
+    pairs = []
+    order = sorted(range(len(boxes)), key=lambda i: boxes[i][lo])
+    for n, i in enumerate(order):
+        for k in order[n + 1:]:
+            if boxes[k][lo] - boxes[i][lo] > 1:
+                break
+            if abs(boxes[k][hi] - boxes[i][hi]) > 1:
+                continue
+            if abs((boxes[k][b] - boxes[k][a]) - (boxes[i][b] - boxes[i][a])) > 1:
+                continue  # 크기가 다른 도형(무늬 옆에 놓인 점선의 대시)은 이웃이 아니다
+            if max(boxes[i][a], boxes[k][a]) - min(boxes[i][b], boxes[k][b]) <= max_gap:
+                pairs.append((i, k))
+    return pairs
 
-    크기가 같은(가로·세로 1pt 이내) 상자가 같은 세로줄의 위아래에, 그리고 같은 가로줄의
-    좌우에 DECOR_MAX_PT 이하 간격으로 모두 있어야 무늬에 든다. 한 방향으로만 이웃이 있으면
-    줄이다. 이웃 관계로 이어진 상자들이 한 무늬다.
-    """
-    sides, pairs = [], []
-    for lo, hi, a, b in ((0, 2, 1, 3), (1, 3, 0, 2)):  # 위아래 이웃, 좌우 이웃
-        found = set()
-        order = sorted(range(len(boxes)), key=lambda i: boxes[i][lo])
-        for n, i in enumerate(order):
-            for k in order[n + 1:]:
-                if boxes[k][lo] - boxes[i][lo] > 1:
-                    break
-                if abs(boxes[k][hi] - boxes[i][hi]) > 1:
-                    continue
-                if abs((boxes[k][b] - boxes[k][a]) - (boxes[i][b] - boxes[i][a])) > 1:
-                    continue  # 크기가 다른 도형(무늬 옆에 놓인 점선의 대시)은 이웃이 아니다
-                gap = max(boxes[i][a], boxes[k][a]) - min(boxes[i][b], boxes[k][b])
-                if gap <= DECOR_MAX_PT:
-                    found.update((i, k))
-                    pairs.append((i, k))
-        sides.append(found)
-    members = sides[0] & sides[1]
+
+def _connected(members, pairs):
+    """이웃 쌍으로 이어진 덩어리들: members 안의 번호만 쓴 집합 목록."""
     root = {i: i for i in members}
 
     def find(i):
@@ -308,6 +384,19 @@ def _lattice(boxes):
     for i in members:
         groups.setdefault(find(i), set()).add(i)
     return list(groups.values())
+
+
+def _lattice(boxes):
+    """상자 (x0, top, x1, bottom) 목록에서 2차원 무늬들을 찾는다: 무늬마다 상자 번호 집합 하나.
+
+    크기가 같은(가로·세로 1pt 이내) 상자가 같은 세로줄의 위아래에, 그리고 같은 가로줄의
+    좌우에 DECOR_MAX_PT 이하 간격으로 모두 있어야 무늬에 든다. 한 방향으로만 이웃이 있으면
+    줄이다. 이웃 관계로 이어진 상자들이 한 무늬다.
+    """
+    stacked = _neighbours(boxes, True, DECOR_MAX_PT)
+    side = _neighbours(boxes, False, DECOR_MAX_PT)
+    members = {i for pair in stacked for i in pair} & {i for pair in side for i in pair}
+    return _connected(members, stacked + side)
 
 
 def _decor_groups(shapes):
@@ -335,16 +424,65 @@ def _without_decor(page):
 
 
 def _decor_inside_tables(tables, groups):
-    """뺀 무늬 가운데 도형의 절반 넘게가 표 안에 있는 것의 수.
+    """뺀 무늬 가운데 표의 일부일 수 있는 것의 수: 도형의 절반 넘게가 표 안에 있거나, 무늬 안에서
+    JOIN_TOLERANCE_PT 이하 간격으로 이어진 도형 줄(두 엔진이 한 줄의 선으로 보는 점선)의 절반 넘게가 표 안에 있는 것.
 
     쪽 장식은 표 밖으로 이어지고(실측: 도형의 3%만 표에 걸침), 표 안에만 있는 무늬는 표의
-    일부(나란한 점선 칸막이 등)일 수 있다.
+    일부(나란한 점선 칸막이 등)일 수 있다. 무늬와 크기가 같은 칸막이 대시가 무늬 옆에 붙어 있으면
+    대부분 표 밖인 무늬 덩어리에 합쳐지므로, 선으로 이어지는 줄은 따로 본다.
     """
     def in_table(box):
         return any(min(box[2], t.bbox[2]) > max(box[0], t.bbox[0])
                    and min(box[3], t.bbox[3]) > max(box[1], t.bbox[1]) for t in tables)
 
-    return sum(1 for group in groups if sum(map(in_table, group)) * 2 > len(group))
+    def mostly_inside(boxes):
+        return sum(map(in_table, boxes)) * 2 > len(boxes)
+
+    count = 0
+    for group in groups:
+        joined = _neighbours(group, True, JOIN_TOLERANCE_PT) + _neighbours(group, False, JOIN_TOLERANCE_PT)
+        runs = _connected({i for pair in joined for i in pair}, joined)
+        count += mostly_inside(group) or any(mostly_inside([group[i] for i in run]) for run in runs)
+    return count
+
+
+def _dotted_dividers(page, tables):
+    """표의 한 칸 안을 세로로 지나는 점선 가운데, 그 점선이 지나는 칸들에서 점선 왼쪽과 오른쪽에 모두 낱말이 있는 것의 수.
+
+    점선은 작은 도형(선 없이 채움만 있는 도형이나 짧은 선분, 긴 쪽 DECOR_MAX_PT 미만, 폭보다 높이가 크거나
+    같고 낱말에 겹치지 않는 것)이 같은 세로줄에 DECOR_MAX_PT 이하 간격으로 둘 이상 이어진 줄이다. 대시
+    사이가 JOIN_TOLERANCE_PT를 넘으면 두 엔진 모두 선으로 잇지 못해 두 열을 한 칸으로 합치므로, 교차
+    대조로는 드러나지 않는다. 칸이 듬성해 행마다 한쪽에만 낱말이 있어도 점선 전체로 양쪽을 본다.
+    """
+    words = page.extract_words()
+    shapes = [o for o in page.rects + page.curves if o.get("fill") and not o.get("stroke")] + page.lines
+    boxes = []
+    for o in shapes:
+        x0, top, x1, bottom = o["x0"], o["top"], o["x1"], o["bottom"]
+        if (max(x1 - x0, bottom - top) < DECOR_MAX_PT and bottom - top >= x1 - x0
+                and any(_in_bbox((x0 + x1) / 2, (top + bottom) / 2, t.bbox) for t in tables)
+                and not any(w["x0"] < x1 and w["x1"] > x0 and w["top"] < bottom and w["bottom"] > top
+                            for w in words)):
+            boxes.append((x0, top, x1, bottom))
+    stacked = _neighbours(boxes, True, DECOR_MAX_PT)
+    runs = _connected({i for pair in stacked for i in pair}, stacked)
+    if not runs:
+        return 0
+    cells = [(cell, [w for w in words if _in_bbox((w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2, cell)])
+             for table in tables for row in table.rows for cell in row.cells if cell is not None]
+    count = 0
+    for run in runs:
+        left = right = False
+        for cell, mine in cells:
+            inside = [boxes[i] for i in run
+                      if cell[0] + SPAN_TOLERANCE_PT < boxes[i][0] and boxes[i][2] < cell[2] - SPAN_TOLERANCE_PT
+                      and cell[1] <= (boxes[i][1] + boxes[i][3]) / 2 <= cell[3]]
+            if inside:
+                x0, x1 = min(b[0] for b in inside), max(b[2] for b in inside)
+                left = left or any(w["x1"] <= x0 for w in mine)
+                right = right or any(w["x0"] >= x1 for w in mine)
+        count += left and right
+    return count
 
 
 def _decor_between_words(page, tables, boxes):
@@ -623,6 +761,8 @@ def _attempt(filename, strategy, drop_decor=False, stream=None):
     restored_spans = 0
     decor_in_tables = 0  # 재시도에서 뺀 도형 가운데 한 칸 안의 낱말 사이에 놓인 것(있으면 재시도 무효)
     decor_patterns = 0   # 재시도에서 뺀 무늬 가운데 주로 표 안에 있는 것(있으면 재시도 무효)
+    dotted = 0           # 한 칸 안을 세로로 지나며 양쪽에 낱말을 둔 점선(있으면 실패)
+    folded = 0           # 출력에서 접은 내용 없는 행·열
     all_problems = []
     all_unassigned = []
     pages_tables = []  # 교차 투표용: 페이지별 [(bbox, grid), ...]
@@ -655,7 +795,16 @@ def _attempt(filename, strategy, drop_decor=False, stream=None):
             pages_tables.append([(t.bbox, g) for t, g in zip(tables, grids)])
             boundary_words.append(_boundary_words(page, tables))
 
-            body = _page_body(page, tables, grids, drop_empty_rows=(strategy == "text"), spans=spans)
+            shown_grids, shown_spans = grids, spans
+            if strategy == "lines":
+                dotted += _dotted_dividers(finder_page, tables)
+                # 대조는 원래 격자로 하고, 출력할 표에서만 내용 없는 얇은 행·열을 접는다.
+                words = page.extract_words()
+                shown = [_fold_empty(t, g, s, _thin_limit(t, words)) for t, g, s in zip(tables, grids, spans)]
+                shown_grids, shown_spans = [g for g, _ in shown], [s for _, s in shown]
+                folded += sum(len(g) + max(map(len, g), default=0) - len(f) - max(map(len, f), default=0)
+                              for g, f in zip(grids, shown_grids))
+            body = _page_body(page, tables, shown_grids, drop_empty_rows=(strategy == "text"), spans=shown_spans)
             if page_count > 1:
                 body.insert(0, f"## 페이지 {i}")
             sections.append("\n\n".join(body))
@@ -686,9 +835,13 @@ def _attempt(filename, strategy, drop_decor=False, stream=None):
             print(f"  - {line}")
 
     ok = not (all_problems or all_unassigned or merged_cells or cross_problems or decor_in_tables
-              or decor_patterns)
+              or decor_patterns or dotted)
+    if dotted:
+        print(f"경고: 표의 한 칸 안을 세로로 지나는 점선 {dotted}줄의 양쪽에 낱말이 있습니다. "
+              "두 엔진 모두 선으로 보지 못해 두 열을 한 칸으로 합쳤을 수 있습니다.")
     if decor_patterns:
-        print(f"경고: 뺀 무늬 {decor_patterns}개가 주로 표 안에 있습니다. 표의 칸막이일 수 있어 이 재시도를 쓰지 않습니다.")
+        print(f"경고: 뺀 무늬 {decor_patterns}개가 주로 표 안에 있거나 표 안에서 선처럼 이어집니다. "
+              "표의 칸막이일 수 있어 이 재시도를 쓰지 않습니다.")
     if decor_in_tables:
         print(f"경고: 뺀 도형 {decor_in_tables}개가 한 칸 안의 낱말 사이에 있습니다. 칸막이였을 수 있어 이 재시도를 쓰지 않습니다.")
     if not ok:
@@ -709,7 +862,7 @@ def _attempt(filename, strategy, drop_decor=False, stream=None):
             print(f"  - [교차] {line}")
         if len(cross_problems) > MAX_PROBLEM_SAMPLES:
             print(f"  ... 외 [교차] {len(cross_problems) - MAX_PROBLEM_SAMPLES}건")
-    return {"cross": cross, "ok": ok, "sections": sections, "straddles": straddles}
+    return {"cross": cross, "ok": ok, "sections": sections, "straddles": straddles, "folded": folded}
 
 
 def process_file(filename, strategy="lines"):
@@ -765,6 +918,9 @@ def process_file(filename, strategy="lines"):
         print("→ 자가검증 실패: 출력 파일을 만들지 않았습니다. 기존 티어(LlamaParse v2·Upstage)로 승격하세요.")
         return False
 
+    if result["folded"]:
+        print(f"내용 없는 얇은 행·열 {result['folded']}줄을 출력에서 접었습니다"
+              "(굵은 괘선·점선 대시가 만든 틈, 값과 칸 배정은 그대로).")
     with open(output_file, "w", encoding="utf-8") as f:
         if result["straddles"]:
             # 어느 칸인지 모호한 자리를 산출물에 남겨 원본 확인 지점을 잃지 않는다
