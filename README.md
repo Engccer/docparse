@@ -9,6 +9,7 @@
 - **적응형 티어 선택**: 사전 점검(페이지 수, 텍스트 레이어, 괘선 격자, 포맷)으로 각 문서를 티어(hwpx / xlsx / docx / odt / small / medium / large / xlarge)로 분류하고 파서 전략을 자동으로 정합니다. 괘선 격자 + 텍스트 레이어 문서는 결정론 파서(pdfplumber)를 추천 선두에 두고(Tier 0), XLSX·DOCX도 로컬 결정론 파서를 우선합니다.
 - **Primary + Patch 퓨전**: 한 파서를 Primary 베이스로 삼고, 나머지 파서는 전체를 다시 파싱하는 대신 빠진 부분(누락된 헤딩, 표 셀, 메타데이터)만 패치합니다. 작업을 효율적으로 유지하면서 각 파서의 강점만 끌어옵니다.
 - **다파서 교차검증**: 숫자 표, 헤딩, 날짜, 고유명사를 파서 간에 대조하고, 데이터 무결성 게이트(산술 검증 + 셀 위치 비교)와 불일치 시 다수결로 판정합니다.
+- **이미지 수치표 다중 판독 대조**: 표가 그림으로 박힌 문서는 격자를 세어 조각으로 자르고, 여러 계열의 판독을 칸별로 대조해 갈린 칸만 다시 확인합니다(`references/image-tables.md`).
 - **무료 로컬 파서 + 유료 클라우드 파서 혼용**: 로컬 엔진(HWPX, pdfplumber, XLSX, DOCX, OpenDataLoader)은 비용 없이 오프라인으로 동작하고, 클라우드 엔진(LlamaParse v2, Upstage, Gemini, Mistral, Corepin, Cohere, OpenAI, Anthropic, Azure Document Intelligence, Google Vision)은 OCR·레이아웃·고완전성 커버리지를 더합니다. 실제로 호출한 클라우드 파서에 대해서만 비용이 발생합니다.
 
 ## 파서 라인업
