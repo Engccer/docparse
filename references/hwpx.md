@@ -47,6 +47,10 @@ python <스킬루트>/scripts/hwpx_enrich.py --hwpx <원본.hwpx> --md <_hwpxloc
 2. **시각적 배치 재현**이 중요한 문서(고사 원안 레이아웃 등). 글상자는 anchor 기반 reading-order 근사이고 중첩표는 텍스트로 평탄화된다.
 3. hwpx_local의 **recall·마커 경고**가 뜨는 문서. 이 경우 `upstage_parse.py`를 함께 돌려 대조한다.
 
+**그림 속 수치는 Upstage 출력을 그대로 채택하지 않는다.** HWPX에 박힌 인포그래픽·차트를 Upstage가 글자로 옮기기는 하지만, 차트 하나를 통째로 빠뜨리고(제목 한 줄만 남음) 막대 차트의 범례를 열로 잘못 세워 값을 엉뚱한 칸에 넣었으며 낱글자를 바꿔 읽었다(충원→중원, 흡수→총수). 이미지는 HWPX 압축 안의 `BinData/imageN.*`에서 원본 해상도로 꺼내고, `Contents/section*.xml`의 `binaryItemIDRef` 순서로 캡션과 짝지은 뒤 직접 판독한다. Upstage는 판독값을 맞춰 보는 두 번째 독자로만 쓴다. 판독한 그림 내용은 캡션 바로 뒤(캡션이 표 칸 안이면 그 표 뒤)에 넣고, 이미지에 숫자가 없어 위치로 읽은 값은 그렇게 읽었다고 적는다.
+
+*근거: n=1(13쪽 HWPX 설명자료, 그림 20개, 2026-11-26)*
+
 ## hwpx-tomd 미설치·암호화
 
 hwpx_local은 `hwpx-tomd` 패키지(`pip install hwpx-tomd`, PyPI·GitHub `Engccer/hwpx-tomd` 공개)에 의존한다. 미설치 디바이스에서는 hwpx_local이 설치 안내를 출력하며 동작하지 않으므로 **Upstage 단독으로 폴백**한다. 암호화(AES) 배포본은 hwpx_local이 자동 감지해 안내하며 Upstage도 파싱 불가다(한컴에서 암호를 제거해 다시 저장한 뒤 변환한다). HWPX **편집**(`--set-cell`/`--find` 등)과 HWP→HWPX 변환은 `hwpx-automation` 스킬을 쓴다.
